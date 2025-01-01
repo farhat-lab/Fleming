@@ -13,6 +13,7 @@ from rdkit import Chem
 from rdkit.Chem import Draw
 import io
 import base64
+import yaml
 
 # data = Tox(name = 'DILI')
 # split = data.get_split()
@@ -22,13 +23,15 @@ azure_openai_endpoint = 'https://azure-ai-dev.hms.edu'
 os.environ['PQA_API_TOKEN'] = pqapi_token
 
 class PQA_Benchmark():
-	def __init__(self, dataset_name, property_interest, task_description):
+	def __init__(self, dataset_name, property_interest, task_description, general_question: str, decimal_question: str):
 		self.dataset_name = dataset_name
 		self.property_interest = property_interest
 		self.data = Tox(name = dataset_name)
 		self.split = self.data.get_split()
 		self.test = self.split['test']
 		self.task_description = task_description
+		self.general_question = general_question
+		self.decimal_question = decimal_question
 
 		if not os.path.exists(f'./{dataset_name}'):
 			os.mkdir(f'./{dataset_name}')
@@ -170,42 +173,69 @@ class PQA_Benchmark():
 
 		return substructures_info, substructure_mapping
 	
-	def synthesize_get_output(self, drug, description, substructures_info = None, image = None):
-		if substructures_info is not None:
-			final_prompt = f"""
-			
-			I’ll provide you with a molecule and its description. Then I will provide you information from literature on each substructure and how they influence the toxicity of the molecule. There might be irrelavent information regarding the substructure included in the description, so feel free to ignore any information that you think is irrelevant. A lot of this information is context dependent use the molecular description to place these substructures into context and use that context along with the retrieved text to make a conclusion.
-			The molecule is the following: {drug} with the following description: {description}
-			Here are the substructures along with information from literature: {substructures_info}
-			Based on this information would this molecule have favorable or unfavorable {self.property_interest}. At the end of your output please just say Result: Unfavorable or Favorable depending on what you decide.
-			
-			"""
-		else:
-			final_prompt = f"""
+	def get_gpt4_prompt(self, drug, description, lit_info):
+		return f"""
 			
 			I’ll provide you with a molecule, its description, and image. 
 			The molecule is the following: {drug} with the following description: {description}
 			Based on this information would this molecule have favorable or unfavorable {self.property_interest}. At the end of your output please just say Result: Unfavorable or Favorable depending on what you decide.
-			
+			This is also some ground truth information that can help {lit_info}. {self.decimal_question} 
 			"""
-		try:
-			return self.launch_gpt4(final_prompt, temp=0.1, max_tokens = 1000, image = image).choices[0].message.content, final_prompt
-		except:
-			print("The call to GPT4 failed for final analysis, trying now with no images")
-			try:
-				return self.launch_gpt4(final_prompt, temp=0.1, max_tokens = 1000).choices[0].message.content, final_prompt
-			except:
-				print("Call for GPT4 failed for final analysis")
-				return "Call to GPT4 failed for final analysis", final_prompt
 	
-	def run_substructure_analysis(self, drug, description, sub_structure_mapping, image):
+	def return_result(self, response):
+		if "I'm sorry, I can't assist with that" in response:
+			return -1
+		if '**Unfavorable**' in response or 'Result: Unfavorable' in response or 'Result**: Unfavorable' in response or 'Result Unfavorable' in response:
+			prediction = 1
+		elif '**Favorable**' in response or 'Result: Favorable' in response or 'Result**: Favorable' in response or 'Result Favorable' in response:
+			prediction = 0
+		else:
+			prediction = response.split('Result')[-1].split('Likelihood')[0].split('\n')[0].split('Reasoning')[0].replace('*','').replace(':','').replace('.','').strip()
+			if prediction == 'Unfavorable':
+				prediction = 1
+			elif prediction == 'Favorable':
+				prediction = 0
+			else:
+				# if len(prediction) > len('Unfavorable'):
+				# 	import pdb; pdb.set_trace()
+				print("THIS FAILED SO DEFAULTED TO 0")
+				return 0
+		return prediction
+	
+	def run_prompt(self, prompt_to_use, image_to_inject):
+		likelihoods = []
+		while len(likelihoods) < 2  or np.std(likelihoods) > 0.05:
+			try:
+				res = self.launch_gpt4(prompt_to_use, temp = 0.000000001, max_tokens = 1000, image = image_to_inject)
+				while 'sorry' in res or 'Sorry' in res:
+					res = self.launch_gpt4(prompt_to_use, temp = 0.000000001, max_tokens = 1000, image = image_to_inject)
+					print("Repeating!")
+
+				likelihoods.append(return_likelihood(res))
+
+				if len(likelihoods) > 2:
+					print(f"Need more clarifications! Currently have this {likelihoods}")
+				
+				if len(likelihoods) > 10:
+					break
+			except:
+				print("We got an error we retried it!")
+				x = self.return_result(res)
+				likelihoods = [x, x]
+
+		final_result = self.return_result(res)
+		final_likelihood = np.mean(likelihoods)
+
+		return res, final_prompt, final_likelihood, likelihoods final_result
+	
+	def run_substructure_analysis(self, drug, description, sub_structure_mapping, image, info_to_inject):
 		molecule_context = f"The molecule is the following: {drug} with the following description: {description}"
 
 		results = []
 
 		for molecule in tqdm(sub_structure_mapping):
 			sub = f'{molecule}:{sub_structure_mapping[molecule]}'
-			new_prompt = molecule_context + 'This is information about ' + sub + f'From this information along with knowing its context in the molecule from description and the image does the addition of {molecule} in this molecule influence its liklihood of being {self.task_description}? If so does it influence it favorably or unfavorably? If not, you can say there is likely minimal to no influence..'
+			new_prompt = molecule_context + 'This is information about ' + sub + f'From this information along with knowing its context in the molecule from description and the image does the addition of {molecule} in this molecule influence its liklihood of being {self.task_description}? If so does it influence it favorably or unfavorably? If not, you can say there is likely minimal to no influence.'
 			try:
 				new_res = self.launch_gpt4(new_prompt, temp=0.1, max_tokens=1000, image = image).choices[0].message.content
 			except:
@@ -219,18 +249,12 @@ class PQA_Benchmark():
 		
 		final_prompt = f'''Ill provide you with a molecule, its description, and an image of the structure. Then I will provide you reasoning on the substructures and how they influence the potential for this drug to be {self.task_description}. From this reasoning and the image say whether the molecule is likely to be or not to be {self.task_description}.'''
 		final_prompt = final_prompt + molecule_context + '\t'.join(results) + 'Give the answer as Result: Favorable or Unfavorable. Provide reasoning.'
-		try:
-			final_result = self.launch_gpt4(final_prompt, temp=0.1, max_tokens=1000, image = image).choices[0].message.content
-		except:
-			print("The call to GPT4 failed for final analysis, trying now with no images")
-			try:
-				final_result = self.launch_gpt4(final_prompt, temp=0.1, max_tokens=1000).choices[0].message.content
-			except:
-				print("Call for GPT4 failed for final analysis")
-				final_result = "Call to GPT4 failed for final analysis"
-		return final_result, final_prompt
+		final_prompt = final_prompt + f"This is also some ground truth information that can help {info_to_inject}. {self.decimal_question} Output this as Likelihood: <Decimal goes here>"
+		return final_prompt
 	
 	def run_molecules_pqa(self, range_run = None):
+
+		get_lit_info = self.get_general_lit_info()
 		
 		if range_run is not None:
 			to_run = self.test.iloc[range_run[0]:range_run[1]]
@@ -249,21 +273,20 @@ class PQA_Benchmark():
 			sub_structure_info, sub_structure_mapping = self.get_sub_structure_info(sub_structures)
 
 			#Trying with PQA
-
-			answer, final_prompt = self.run_substructure_analysis(row['Drug'], description, sub_structure_mapping, image)
+			answer, final_prompt, likelihood, likelihoods, final_result = self.run_prompt(self.run_substructure_analysis(row['Drug'], description, sub_structure_mapping, image, get_lit_info), image)
 			# answer, final_prompt = self.synthesize_get_output(row['Drug'], description, sub_structure_info)
 			print(answer)
 			answer = answer.replace('\n', '')
 			final_prompt = final_prompt.replace('\n', '').replace('\t', '')
-			self.results.write(f"{row['Drug']}\t{description}\t{final_prompt}\t{answer}\t{row['Y']}\t{self.admet_model.predict(row['Drug'])[self.dataset_name]}\tPQA\n")
+			self.results.write(f"{row['Drug']}\t{description}\t{final_prompt}\t{answer}\t{final_result}\t{row['Y']}\t{likelihood}\t{likelihoods}\tPQA\n")
 			self.results.flush()
 
 			#Trying just GPT4
-			answer, final_prompt = self.synthesize_get_output(row['Drug'], description,None, image)
+			answer, final_prompt, likelihood, likelihoods, final_result = self.run_prompt(self.get_gpt4_prompt(row['Drug'], description, get_lit_info), image)
 			print(answer)
 			answer = answer.replace('\n', '')
 			final_prompt = final_prompt.replace('\n', '').replace('\t', '')
-			self.results.write(f"{row['Drug']}\t{description}\t{final_prompt}\t{answer}\t{row['Y']}\t{self.admet_model.predict(row['Drug'])[self.dataset_name]}\tGPT4\n")
+			self.results.write(f"{row['Drug']}\t{description}\t{final_prompt}\t{answer}\t{final_result}\t{row['Y']}\t{likelihood}\t{likelihoods}\tGPT4\n")
 			self.results.flush()
 	
 	def encode_image(self, image):
@@ -280,32 +303,39 @@ class PQA_Benchmark():
 
 			return image_base64_utf8
 
-
 	def generate_image(self, smiles):
 		molecule = Chem.MolFromSmiles(smiles)
 
 		# Generate an image of the molecule
 		image = Draw.MolToImage(molecule, size=(300, 300))
 		return self.encode_image(image)
+	
+	def return_likelihood(self, response):
+		prediction = response.replace('*','').split('Likelihood')[-1].split('\n')[0].split('Reasoning')[0].replace('*','').replace(':','').replace('(', '').strip().split(' ')[0]
+		return float(prediction)
+	
+	def get_general_lit_info(self):
+		return pqapi.agent_query(f"{self.general_question}").answer.answer
 
 if __name__ == '__main__':
-	if len(sys.argv) < 3:
-		print("Usage: python run_analysis.py <dataset_name> <property_interest>")
-		sys.exit(1)
+	if len(sys.argv) < 2:
+        print("Usage: python run_analysis.py <config_file>")
+        sys.exit(1)
 	
-	dataset_name = sys.argv[1]
-	property_interest = sys.argv[2]
-	task_description = sys.argv[3]
+	def load_config(config_file):
+		with open(config_file, 'r') as file:
+			return yaml.safe_load(file)
 
-	#benchmark = PQA_Benchmark('DILI', 'toxicity to the liver')
-	#benchmark = PQA_Benchmark('Carcinogens_Lagunin', 'ability to cause cancer or be a carcinogen')
-	benchmark = PQA_Benchmark(dataset_name, property_interest, task_description)
-	benchmark.run_molecules_pqa()
+    config_file = sys.argv[1]
+    config = load_config(config_file)
 
-	# test_molecule = split['test']['Drug'].values[0]
-	# result = return_molecule_substructures(test_molecule)
-	# print(result)
-	# import pdb; pdb.set_trace()
-	# pqa_result = launch_pqa(result[0], 'toxicity to the liver')
-	# import pdb; pdb.set_trace()
+    dataset_name = config['dataset_name']
+    property_interest = config['property_interest']
+    task_description = config['task_description']
+    general_question = config['general_question']
+    decimal_question = config['decimal_question']
+
+    benchmark = PQA_Benchmark(dataset_name, property_interest, task_description, general_question, decimal_question)
+    benchmark.run_molecules_pqa()
+
 

@@ -152,7 +152,7 @@ gpt4_new_likelihood = []
 
 
 df = pd.read_csv(f'./{dataset}/results.tsv', sep = '\t', header = None)
-result_file = open(f'./{dataset}/ADMET_results.tsv', 'w')
+result_file = open(f'./{dataset}/ADMET_results_fake.tsv', 'w')
 
 for index, row in tqdm(df.iterrows(), total=int(df.shape[0])):
 	drug = row[0]
