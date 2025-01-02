@@ -4,7 +4,7 @@ import re
 import os
 from openai import AzureOpenAI
 from molecular_describer import prompt_generator
-from tdc.single_pred import Tox
+from tdc.single_pred import Tox, ADME
 from tqdm import tqdm
 import asyncio
 import sys
@@ -14,6 +14,7 @@ from rdkit.Chem import Draw
 import io
 import base64
 import yaml
+import numpy as np
 
 # data = Tox(name = 'DILI')
 # split = data.get_split()
@@ -26,7 +27,10 @@ class PQA_Benchmark():
 	def __init__(self, dataset_name, property_interest, task_description, general_question: str, decimal_question: str):
 		self.dataset_name = dataset_name
 		self.property_interest = property_interest
-		self.data = Tox(name = dataset_name)
+		if 'Bioavailability' in dataset_name:
+			self.data = ADME(name = dataset_name)
+		else:
+			self.data = Tox(name = dataset_name)
 		self.split = self.data.get_split()
 		self.test = self.split['test']
 		self.task_description = task_description
@@ -136,11 +140,6 @@ class PQA_Benchmark():
 		prompt_to_run, iupac_success = prompt_generator(smile_string)
 		description = self.launch_gpt4(prompt_to_run, temp=0.1).choices[0].message.content
 
-		# prompt = ''' I'll provide you a description of a molecule, please give the substructures that is important to its chemical properties. 
-		#                  Please only respond the substructures separating by commas like: substructure1, substructure2, ... . Please only keep the key words and removing words like group or moiety etc, 
-		#                  Remove the positional notation information and make sure all are in in the lower case form.
-		#                  Here is the molecule description ''' + description
-
 		prompt = f'''Provide a list of the substructures of this molecule in a list format separated by semicolons like: substructure1;substructure2;substructure3.
 		Exclude any numbers from the subgroups. This is the molecule: {description}'''
 		
@@ -149,6 +148,18 @@ class PQA_Benchmark():
 		sub_structures = [i.replace('group', '').rstrip().strip() for i in sub_structures]
 		return description, sub_structures
 	
+	def collate_substructures(self, smile_string, description, potential_substructures, image):
+		prompt = f'''Here is a molecule smile structure {smile_string} and its description: {description}.
+		Here is a list of potential substructures that could be in the molecule: {potential_substructures}. 
+		Using these and the provided image and output the substructures that are present in the molecule.
+		Make sure you are not redundant in the outputted substructures. For example, benzene and benzene ring are the same thing.
+		Make sure no substructures have numbers in them. For example a 8-methyl-1,2,3,4-tetrahydronaphthalene should be outputted as a methyl and tetrahydronaphthalen substructure.
+		Or 5-methyl is just a methyl substructure.
+		Output in a list format separated by commas like: substructure1,substructure2,substructure3.'''
+
+		sub_structures = self.launch_gpt4(prompt, temp=0.1, image = image).choices[0].message.content
+		return [i.rstrip().strip() for i in sub_structures.split(',')]
+
 	def get_sub_structure_info(self, sub_structures):
 		sub_structures_to_run = []
 		for sub_structure in sub_structures:
@@ -206,12 +217,12 @@ class PQA_Benchmark():
 		likelihoods = []
 		while len(likelihoods) < 2  or np.std(likelihoods) > 0.05:
 			try:
-				res = self.launch_gpt4(prompt_to_use, temp = 0.000000001, max_tokens = 1000, image = image_to_inject)
+				res = self.launch_gpt4(prompt_to_use, temp = 0.000000001, max_tokens = 1000, image = image_to_inject).choices[0].message.content
 				while 'sorry' in res or 'Sorry' in res:
-					res = self.launch_gpt4(prompt_to_use, temp = 0.000000001, max_tokens = 1000, image = image_to_inject)
+					res = self.launch_gpt4(prompt_to_use, temp = 0.000000001, max_tokens = 1000, image = image_to_inject).choices[0].message.content
 					print("Repeating!")
 
-				likelihoods.append(return_likelihood(res))
+				likelihoods.append(self.return_likelihood(res))
 
 				if len(likelihoods) > 2:
 					print(f"Need more clarifications! Currently have this {likelihoods}")
@@ -220,13 +231,14 @@ class PQA_Benchmark():
 					break
 			except:
 				print("We got an error we retried it!")
+				#import pdb; pdb.set_trace()
 				x = self.return_result(res)
 				likelihoods = [x, x]
 
 		final_result = self.return_result(res)
 		final_likelihood = np.mean(likelihoods)
 
-		return res, final_prompt, final_likelihood, likelihoods final_result
+		return res, prompt_to_use, final_likelihood, likelihoods, final_result
 	
 	def run_substructure_analysis(self, drug, description, sub_structure_mapping, image, info_to_inject):
 		molecule_context = f"The molecule is the following: {drug} with the following description: {description}"
@@ -268,8 +280,18 @@ class PQA_Benchmark():
 			
 			image = self.generate_image(row['Drug'])
 
-			description, sub_structures = self.return_molecule_substructures(row['Drug'])
-			#import pdb; pdb.set_trace()
+			#HERE YOU WANNA FIX LETS GO!!!! SAMPLE MULtiple substructures
+			final_sub_structures = []
+			for _ in range(4):
+				description, sub_structures = self.return_molecule_substructures(row['Drug'])
+	
+				while len(sub_structures) == 1:
+					description, sub_structures = self.return_molecule_substructures(row['Drug'])
+					print("Restarting sub structures because only one was found")
+				final_sub_structures.extend(sub_structures)
+			
+			sub_structures = self.collate_substructures(row['Drug'], description, ','.join(list(set(final_sub_structures))), image)
+			print(f"Substructures found: {sub_structures}")
 			sub_structure_info, sub_structure_mapping = self.get_sub_structure_info(sub_structures)
 
 			#Trying with PQA
@@ -319,23 +341,23 @@ class PQA_Benchmark():
 
 if __name__ == '__main__':
 	if len(sys.argv) < 2:
-        print("Usage: python run_analysis.py <config_file>")
-        sys.exit(1)
+	    print("Usage: python run_analysis.py <config_file>")
+	    sys.exit(1)
 	
 	def load_config(config_file):
 		with open(config_file, 'r') as file:
 			return yaml.safe_load(file)
 
-    config_file = sys.argv[1]
-    config = load_config(config_file)
+	config_file = sys.argv[1]
+	config = load_config(config_file)
 
-    dataset_name = config['dataset_name']
-    property_interest = config['property_interest']
-    task_description = config['task_description']
-    general_question = config['general_question']
-    decimal_question = config['decimal_question']
+	dataset_name = config['dataset_name']
+	property_interest = config['property_interest']
+	task_description = config['task_description']
+	general_question = config['general_question']
+	decimal_question = config['decimal_question']
 
-    benchmark = PQA_Benchmark(dataset_name, property_interest, task_description, general_question, decimal_question)
-    benchmark.run_molecules_pqa()
+	benchmark = PQA_Benchmark(dataset_name, property_interest, task_description, general_question, decimal_question)
+	benchmark.run_molecules_pqa()
 
 
