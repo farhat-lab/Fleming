@@ -155,10 +155,21 @@ class PQA_Benchmark():
 		Make sure you are not redundant in the outputted substructures. For example, benzene and benzene ring are the same thing.
 		Make sure no substructures have numbers in them. For example a 8-methyl-1,2,3,4-tetrahydronaphthalene should be outputted as a methyl and tetrahydronaphthalen substructure.
 		Or 5-methyl is just a methyl substructure.
-		Output in a list format separated by commas like: substructure1,substructure2,substructure3.'''
+		Output in a list format separated by commas like: substructure1,substructure2,substructure3.
+		Just output the corrected list, nothing else.'''
 
 		sub_structures = self.launch_gpt4(prompt, temp=0.1, image = image).choices[0].message.content
-		return [i.rstrip().strip() for i in sub_structures.split(',')]
+
+		prompt = f'''Do any of these substructures have a number in them? {sub_structures}
+		If so, please remove the number and output the substructure without the number.
+		Output in a list format separated by commas like: substructure1,substructure2,substructure3.
+		Just output the corrected list, nothing else.'''
+
+		sub_structures = self.launch_gpt4(prompt, temp=0.1).choices[0].message.content
+
+		sub_structures = [i.rstrip().strip() for i in sub_structures.split(',')]
+		return [i for i in sub_structures if len(i) > 1]
+
 
 	def get_sub_structure_info(self, sub_structures):
 		sub_structures_to_run = []
