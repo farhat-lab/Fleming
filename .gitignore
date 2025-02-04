@@ -20,7 +20,6 @@ bin/
 include/
 .chainlit
 .files
-*.pdf
 *.npy
 lightning_logs/
 wandb/
