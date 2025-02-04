@@ -1,1 +1,1 @@
-![icon](figures/icon.pdf)
+![icon](figures/icon.png)
