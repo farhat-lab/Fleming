@@ -1,3 +1,2 @@
-<picture align="center">
-  ![icon](figures/icon.png)
-</picture>
+![icon](figures/icon.png)
+
