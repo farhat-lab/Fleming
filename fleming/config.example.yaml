@@ -1,0 +1,17 @@
+openai_backend: "openai"
+openai_api_key: "your-openai-api-key"
+pqapi_token: "your-pqapi-token"
+
+# Environment configuration for external tools
+# If you have a separate environment for ChemMCP tools, specify the run command here.
+# Default is "conda run -n chemtools python"
+chemmcp_python_cmd: "conda run -n chemtools python"
+# Or if you have the tools installed in the same environment:
+# chemmcp_python_cmd: "python"
+
+# Paths for Molecular Generation Agent
+diffusion_model_path: "molecule_diffusion/e3_diffusion_for_molecules/outputs/TB_Diffusion_resume"
+diffusion_cache_path: "data/diffusion_mols_cache.pkl"
+chemprop_model_path: "model_checkpoints/final_model/fold_0/model_0/model.pt"
+novelty_train_data: "agent_files/train_data.csv"
+chembl_antibiotics_data: "agent_files/chembl_antibiotics.csv"
