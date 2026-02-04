@@ -5,20 +5,49 @@
 # Fleming: An AI Agent for Antibiotic Discovery In Mycobacterium Tuberculosis
 
 ## What is Fleming?
-Fleming is an agent designed to generate novel and plausible TB antibiotics. It consists of a central manager agent that orchestrates the actions of four specialized agents: the inhibition agent, ADMET agent, molecular generation agent, and molecular optimization agent. Together, these agents collaborate to fulfill user-defined tasks in antibiotic discovery. 
+Fleming is an agentic system for designing, prioritizing, and optimizing novel small-molecule antibiotics against Mycobacterium tuberculosis (Mtb). It combines tool-using LLM orchestration with state-of-the-art molecular ML models, literature-aware reasoning, and generative chemistry to support both:
 
+* Co-pilot mode: interactive analysis/design of a small number of molecules in real time
+
+* Batch mode: high-throughput screening, generation, ranking, and optimization of large libraries
 ![fleming](figures/fleming.png)
 
-### Inhibition Agent
-The inhibition agent takes a small molecule and predicts its inhibition of MTB using a model trained on data from 114,933 distinct molecules and their *in vitro* effect on TB growth. This inhibition model also identifies the molecular substructures contributing to its predictions. The agent then leverages an LLM model, GPT-4o, to assess the plausibility of the molecule based on its structure.
+# Overview 
+Fleming is centered around a manager (“medicinal chemist”) agent that routes user requests to specialized sub-agents and combines outputs into a final decision.
+
+### TB Growth Inhibition Agent
+
+Predicts whole-cell Mtb growth inhibition using an evidential DMPNN (eDMPNN) trained on 114,933 compounds/fragments with in vitro growth readouts.
+
+Provides uncertainty-aware predictions (useful for out-of-distribution molecules).
+
+Performs literature retrieval and synthesis to modify predictions based on biological priors. 
+
+Produces model explanations (e.g., substructure attribution) and LLM-based plausibility checks.
 
 ### ADMET Agent
-The ADMET agent operates similarly, leveraging ADMET.AI molecular ML models to predict a small molecule's ADMET properties. After this step, the agent utilizes PaperQA2 to assess the same properties by reviewing relevant literature and lastly making a decision by combining molecular ML model predictions and literature.
+Predicts absorption/distribution/metabolism/excretion/toxicity using ADMET.AI models across many endpoints.
 
+Performs literature-grounded reasoning (literature retrieval + synthesis) to improve robustness, especially when model confidence is low or chemistry is novel.
 ### Molecular Generation Agent
-The molecular generation agent utilizes a conditional small molecule diffusion model and a Monte-Carlo Tree Search model to design novel compounds that are filtered for synthesizability and novelty.
+Designs new candidate inhibitors using:
+
+Conditional equivariant diffusion
+
+SyntheMol / MCTS-style fragment generation
+
+Filters generations for novelty and synthetic feasibility (SAScore/SCScore).
 
 ### Molecular Optimization Agent
-The molecular optimization agent receives an input molecule and directs a secondary agent to identify structurally similar molecules in chemical space that exhibit enhanced ADMET properties. The optimal molecule is then sent back to the manager, which determines whether to proceed with further optimization or to conclude the process.
+Molecular Optimization Agent
 
-## Sample Requests
+Improves ADMET properties via local chemical neighbor search / modification while preserving predicted inhibition.
+
+Supports multi-objective optimization (e.g., reduce hepatotoxicity + avoid hERG + keep inhibition high).
+
+
+## Repo Structure
+
+* `fleming` contains the full AI agent 
+* `evaluation` contains evaluation scripts
+
