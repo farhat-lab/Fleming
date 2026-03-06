@@ -72,6 +72,7 @@ class Basic_Agent(PQA_Agent):
 
     def __init__(self, config, agent_name: str, gradio: bool, prompts: dict):
         # config here is the path string, e.g., 'config.yaml'
+        self.config_path = config
         self.config = self.load_config(config)
         self.agent_name = agent_name
         self.has_gpu = torch.cuda.is_available()

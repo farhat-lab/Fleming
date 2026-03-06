@@ -25,6 +25,50 @@ class OptimizationUtils(Basic_Agent):
         # Use provided utilities or create new ones if not provided
         self.admet_utils = admet_utils if admet_utils is not None else ADMETUtils(config, "ADMET Utils", gradio, prompts)
         self.inhibition_utils = inhibition_utils if inhibition_utils is not None else InhibitionUtils(config, "Inhibition Utils", gradio, prompts)
+        self.use_synspace = False
+
+    def set_use_synspace(self, use_synspace: bool):
+        self.use_synspace = use_synspace
+        print(f"OptimizationUtils: set use_synspace to {self.use_synspace}")
+
+    def generate_siblings_llm(self, smiles: str):
+        print(f"Generating siblings for {smiles} using LLM...")
+        
+        # Get description
+        description = ""
+        gen = self.describe_molecule([smiles])
+        try:
+            while True:
+                next(gen)
+        except StopIteration as e:
+            description = e.value
+            
+        prompt = f"""
+You are an expert medicinal chemist. I have a molecule with SMILES: {smiles}
+Description: {description}
+
+Please generate 20 chemical neighbors of this molecule.
+Make small optimization changes that shouldn't make it less synthesizable.
+Return ONLY a python list of SMILES strings. Do not include any other text.
+Format: ["SMILES1", "SMILES2", ...]
+"""
+        messages = [{"role": "user", "content": prompt}]
+        response = self.llm_infer(messages)
+        
+        # Extract list from response
+        import ast
+        try:
+            # Find list bracket
+            start = response.find('[')
+            end = response.rfind(']') + 1
+            if start != -1 and end != -1:
+                siblings = ast.literal_eval(response[start:end])
+                if isinstance(siblings, list):
+                    return [s for s in siblings if isinstance(s, str)]
+        except Exception as e:
+            print(f"Error parsing LLM response for siblings: {e}")
+            
+        return []
     
     @staticmethod
     def generate_siblings_SMILES(smiles:str):
@@ -141,7 +185,10 @@ class OptimizationUtils(Basic_Agent):
             result = f"\n## Optimization Results for Molecule {mol_idx + 1}: {smiles}\n\n"
             
             # 1. Generate and QC siblings
-            siblings = OptimizationUtils.generate_siblings_SMILES(smiles)
+            if self.use_synspace:
+                siblings = OptimizationUtils.generate_siblings_SMILES(smiles)
+            else:
+                siblings = self.generate_siblings_llm(smiles)
             
             if siblings is None or not siblings:
                 result += "Error: No siblings generated\n"

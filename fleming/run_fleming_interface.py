@@ -4,7 +4,6 @@ import sys
 import threading
 import queue
 sys.stdout.flush()
-# from agent.agent import SigSpace
 import spaces
 import gradio as gr
 import os
@@ -314,6 +313,9 @@ fleming = get_current_fleming()
 
 # Add a global flag to prevent concurrent executions
 _is_processing = False
+_active_request_signature = None
+_last_completed_request_signature = None
+_last_completed_request_time = 0.0
 
 # Initialize interruption flags for all agents (with safe attribute setting)
 # Set interrupt flags for Fleming instances
@@ -428,7 +430,6 @@ def enhance_message_with_molecules(content, role="assistant"):
         context_name = smiles_data.get('context_name', None)
         
         try:
-            # Generate the molecule image using Fleming's method
             image_base64 = fleming.generate_image(smiles)
             
             if image_base64 is not None:
@@ -695,6 +696,7 @@ with gr.Blocks(css=css) as demo:
         gr.Markdown("""On the **left**, you will find the main conversation. All messages that you need to view will show up here. In the **middle**, you will find Fleming's thought process, which will include all the results of the tool calls that it runs. This can help you audit Fleming's reasoning, but is not necessary. On the **right**, molecules that are mentioned in the chat will be displayed.""")
         gr.Markdown("To analyze more than 10 molecules, upload a CSV with one column labeled SMILES.")
         csv_upload = gr.File(label="Upload SMILES CSV", file_types=[".csv"])
+        use_synspace_checkbox = gr.Checkbox(label="Use Synspace for Neighbors", value=False)
 
         with gr.Row():
             with gr.Column(scale=3):
@@ -799,12 +801,15 @@ with gr.Blocks(css=css) as demo:
             print(f"⚠️ Error during hard interrupt: {e}")
 
     # --- Handler Functions ---
-    def custom_chat_handler(message, history, inner_history, current_gallery, uploaded_csv):
+    def custom_chat_handler(message, history, inner_history, current_gallery, uploaded_csv, use_synspace):
         global _is_processing, all_displayed_smiles
+        global _active_request_signature, _last_completed_request_signature, _last_completed_request_time
         import time
         start_time = time.time()
         
         current_fleming = get_current_fleming()
+        uploaded_csv_name = getattr(uploaded_csv, "name", None) if uploaded_csv else None
+        request_signature = (message.strip(), uploaded_csv_name, bool(use_synspace))
         
         # State for batch components
         batch_summary = "Batch processing status will appear here."
@@ -814,16 +819,39 @@ with gr.Blocks(css=css) as demo:
         download_visible = False
 
         if _is_processing:
-            print("🚫 Request already being processed, interrupting previous request...")
+            if request_signature == _active_request_signature:
+                print("🚫 Duplicate request ignored while current request is still processing.")
+                yield (
+                    history, inner_history, current_gallery,
+                    gr.update(interactive=False, value="Processing..."), gr.update(interactive=False, value="🚫 Reset Disabled"),
+                    gr.update(visible=True),
+                    batch_summary, gr.update(value=batch_df_value, visible=batch_df_visible),
+                    gr.update(value=download_path, visible=download_visible)
+                )
+                return
+
+            print("🚫 New request arrived while processing, interrupting previous request...")
             if hasattr(current_fleming, '_interrupt_requested'):
                 current_fleming._interrupt_requested = True
             else:
                 current_fleming._interrupt_requested = True
-            
-            import time
+
             time.sleep(0.1)
-            
             _is_processing = False
+        
+        if (
+            request_signature == _last_completed_request_signature
+            and (time.time() - _last_completed_request_time) < 3
+        ):
+            print("🚫 Duplicate request ignored immediately after completion.")
+            yield (
+                history, inner_history, current_gallery,
+                gr.update(interactive=True, value="Send"), gr.update(interactive=True, value="🗑️ Reset Conversation"),
+                gr.update(visible=False),
+                batch_summary, gr.update(value=batch_df_value, visible=batch_df_visible),
+                gr.update(value=download_path, visible=download_visible)
+            )
+            return
         
         if not message.strip() and not getattr(current_fleming, '_is_waiting_for_user_input', False):
             # Return current state if message is empty
@@ -837,6 +865,7 @@ with gr.Blocks(css=css) as demo:
             return
 
         _is_processing = True
+        _active_request_signature = request_signature
         mode_name = "Fleming" if current_fleming_mode == "real" else "Fleming"
         print(f"🔄 Starting request processing with {mode_name}")
         
@@ -862,7 +891,7 @@ with gr.Blocks(css=css) as demo:
                     current_fleming._interrupt_requested = False
 
                 agent_generator = current_fleming.run_gradio_chat(
-                    message, main_chat_history, 0.3, 1024, 81920, False, conversation_state, 30, 100, uploaded_csv_path=uploaded_csv.name if uploaded_csv else None
+                    message, main_chat_history, 0.3, 1024, 81920, False, conversation_state, 30, 100, uploaded_csv_path=uploaded_csv.name if uploaded_csv else None, use_synspace=use_synspace
                 )
 
                 for output in agent_generator:
@@ -985,6 +1014,9 @@ with gr.Blocks(css=css) as demo:
         
         finally:
             _is_processing = False
+            _last_completed_request_signature = request_signature
+            _last_completed_request_time = time.time()
+            _active_request_signature = None
             print("✅ Request processing completed")
             if hasattr(current_fleming, '_interrupt_requested'):
                 current_fleming._interrupt_requested = False
@@ -1000,13 +1032,13 @@ with gr.Blocks(css=css) as demo:
     # --- Event Listeners ---
     send_event = send_btn.click(
         custom_chat_handler,
-        inputs=[msg_input, chatbot, inner_chatbot, molecule_gallery, csv_upload],
+        inputs=[msg_input, chatbot, inner_chatbot, molecule_gallery, csv_upload, use_synspace_checkbox],
         outputs=[chatbot, inner_chatbot, molecule_gallery, send_btn, reset_btn, progress_display, batch_summary_display, batch_dataframe_display, download_csv_button],
     ).then(lambda: (None, ""), outputs=[csv_upload, msg_input])
     
     submit_event = msg_input.submit(
         custom_chat_handler,
-        inputs=[msg_input, chatbot, inner_chatbot, molecule_gallery, csv_upload],
+        inputs=[msg_input, chatbot, inner_chatbot, molecule_gallery, csv_upload, use_synspace_checkbox],
         outputs=[chatbot, inner_chatbot, molecule_gallery, send_btn, reset_btn, progress_display, batch_summary_display, batch_dataframe_display, download_csv_button],
     ).then(lambda: (None, ""), outputs=[csv_upload, msg_input])
 
