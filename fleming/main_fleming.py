@@ -129,17 +129,21 @@ class Fleming(Basic_Agent):
     def _generate_final_summary(self):
         """Helper to generate and return the final summary."""
         print(f"\033[1;33;40m Generating final summary.\033[0m")
-        summarization_prompt_template = self.prompts.get('summarization_prompt', "Please summarize your findings now.")
         try:
-            summarization_prompt = summarization_prompt_template.format(instruction=self._original_user_query or "the user's request")
-        except (KeyError, AttributeError):
-            summarization_prompt = summarization_prompt_template
-            
-        self.conversation.append({"role": "user", "content": summarization_prompt})
-        final_summary = self.llm_infer(self.conversation)
-        self.conversation.append({"role": "assistant", "content": final_summary})
-        self.latest_final_response = final_summary
-        return final_summary
+            summarization_prompt_template = self.prompts.get('summarization_prompt', "Please summarize your findings now.")
+            try:
+                summarization_prompt = summarization_prompt_template.format(instruction=self._original_user_query or "the user's request")
+            except (KeyError, AttributeError):
+                summarization_prompt = summarization_prompt_template
+                
+            self.conversation.append({"role": "user", "content": summarization_prompt})
+            final_summary = self.llm_infer(self.conversation)
+            self.conversation.append({"role": "assistant", "content": final_summary})
+            self.latest_final_response = final_summary
+            return final_summary
+        except Exception as e:
+            print(f"Error generating summary: {e}")
+            return "I have completed the analysis, but encountered an error generating the final summary. Please review the steps above."
 
     def run_gradio_chat(self, message: str,
                     history: list,
@@ -150,10 +154,14 @@ class Fleming(Basic_Agent):
                     conversation_state: gr.State,
                     max_round: int = 20,
                     seed: int = None,
-                    uploaded_csv_path: str = None):
+                    uploaded_csv_path: str = None,
+                    use_synspace: bool = False):
         """
         Main chat function for Fleming using a robust, sequential ReAct loop.
         """
+        # Set the flag on the optimization agent
+        self.optimization_agent.set_use_synspace(use_synspace)
+
         if self._is_waiting_for_user_input:
             # This block handles RESUMING either a paused sub-agent or Fleming itself waiting for user input.
             self._is_waiting_for_user_input = False
