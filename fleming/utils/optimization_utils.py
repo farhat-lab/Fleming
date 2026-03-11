@@ -43,12 +43,19 @@ class OptimizationUtils(Basic_Agent):
         except StopIteration as e:
             description = e.value
             
+        # Clean description if it contains "Molecule 1 (SMILES): " prefix
+        if f"({smiles}):" in description:
+             parts = description.split(f"({smiles}):", 1)
+             if len(parts) > 1:
+                description = parts[1].strip()
+
         prompt = f"""
 You are an expert medicinal chemist. I have a molecule with SMILES: {smiles}
 Description: {description}
 
 Please generate 20 chemical neighbors of this molecule.
 Make small optimization changes that shouldn't make it less synthesizable.
+Focus on bioisosteric replacements, scaffold hopping, and side chain modifications that are common in medicinal chemistry.
 Return ONLY a python list of SMILES strings. Do not include any other text.
 Format: ["SMILES1", "SMILES2", ...]
 """
@@ -57,16 +64,23 @@ Format: ["SMILES1", "SMILES2", ...]
         
         # Extract list from response
         import ast
+        import re
         try:
+            # Remove markdown code blocks if present
+            cleaned_response = re.sub(r'```.*?```', '', response, flags=re.DOTALL)
+            cleaned_response = re.sub(r'```', '', cleaned_response)
+            
             # Find list bracket
-            start = response.find('[')
-            end = response.rfind(']') + 1
+            start = cleaned_response.find('[')
+            end = cleaned_response.rfind(']') + 1
             if start != -1 and end != -1:
-                siblings = ast.literal_eval(response[start:end])
+                list_str = cleaned_response[start:end]
+                siblings = ast.literal_eval(list_str)
                 if isinstance(siblings, list):
                     return [s for s in siblings if isinstance(s, str)]
         except Exception as e:
             print(f"Error parsing LLM response for siblings: {e}")
+            print(f"Response was: {response}")
             
         return []
     

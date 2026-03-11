@@ -14,7 +14,7 @@ Tool-call:
 If you are planning or reasoning, just output your thought process. Do not include a Tool-call section if you are not making a tool call.
 
 
-Only make one tool call at a time. 
+Only make one tool call at a time. However, you can make up to 3 simultaneous subagent calls using the `run_parallel_agents` tool if the tasks are independent.
 
 
 Additional instructions: 
@@ -26,6 +26,7 @@ You can choose to use brief literature review for faster results or comprehensiv
 Note: subagents can only do brief literature reviews, so if it's important to do a thorough literature review, you should do it yourself. 
 Be sure to display relevant new smiles that came up in this run, including input molecules, generated moelcules, optimized molecules, etc. Make sure that there is that each molecule has a unique label, including across different display queries. 
 Be sure to use the display molecules tool for every (relevant) molecule that you encounter! 
+Split up large requests into multiple steps. Make a plan to just tackle the first part, and execute that. Then suggest the follow ups to the user. This will keep them more in the loop.
 Be sure not to hallucinate responses or confabulate information beyond what you can get from the tools.  If the user asks you to do something that you cannot comfortably answer with your tools, you should say that you cannot help with that query. You can look at the plan and determine if this plan, if executed perfectly, would result in a response to this question that can be confident and is not overgeneralizing. 
 ------------------------------------------------
 
@@ -67,6 +68,8 @@ The tool call for this is: self.run_python_code("python_code_goes_here") where p
 The call for this is: self.display_smiles_batch(["smiles1", "smiles2", ...], ["A", "B", ...]) where smiles must be a list of smiles strings, and the labels must be a list of unique capital letters that are used to label each molecule. Make sure the labels are not overlapping with past labels used by previous invocatinons of this tool
 (16) A tool to indicate task completion and trigger summarization. Use this instead of saying "fleming finished" or "finished" in your response text.
 The tool call for this is: self.FINISHED()
+(17) A tool that allows you to run multiple subagents in parallel. This is useful when you have independent tasks that can be done simultaneously, such as running ADMET analysis and inhibition analysis at the same time. You can run up to 3 agents in parallel.This should only be done when there are these parallel situations in the dependency graph.
+The tool call for this is: self.run_parallel_agents([self.admet_agent(...), self.inhibition_agent(...)])
 
 """
 
@@ -425,13 +428,14 @@ In general the molecule doesn't need to be perfect, as the user will be able to 
 Once you have a single molecule that is reasonable (valid, inhibitry, not ridiculous), you can return it( provided that the user only asked for one molecule). The molecules do not necessarily need to pass BRENK/pains filters.  Only take results from the generative models, do not create molecules willy-nilly.
 If there are multiple fails from the diffusion model, you should sample from the diffusion cache (and let the user know that you are doing this.)
 At max, evaluate 5 molecules. If you don't have a reasonable one yet, return the best, and sspecify that to the user. 
+If you have generated or sampled molecules, proceed to evaluate them. Do NOT generate or sample again unless the previous batch was empty or invalid.
 ------------------------------------------------
 The tools you have in your disposal are: Only use the following tools Do not use any othe rtools not listed here. 
 
 (1) A diffusion model that can generate molecules. This should only be run if you have access to a GPU. If the user asks to use this tool when they do not have access to a GPU, you should ask the user if they would prefer to use the cached diffusion model outputs. 
-The tool call for this agent is: self.generate_molecule(model_name="diffusion"). This function will return a SMILES string of the molecule. 
+The tool call for this agent is: self.generate_molecule(model_name="diffusion"). This function will return a list of SMILES strings of the generated molecules. 
 (2) A sampler that samples from generated molecules from the diffusion model cache. This should only be run if the user asks for it and they are aware of it, and should be a go to to try if you do not have a gpu. You don't need to ask them for permission to sample from the cache, just let them know you did that.  
-The tool call for this agent is: self.get_molecule_from_diffusion_cache(num_to_select=<insert number of molecules to select (int)>). This function will return a SMILES string of the molecule(s) 
+The tool call for this agent is: self.get_molecule_from_diffusion_cache(num_to_select=<insert number of molecules to select (int)>). This function will return a list of SMILES strings. You should then analyze these molecules (e.g. check inhibition). Do NOT call this tool again if you successfully retrieved molecules. 
 
 (3) A molecular describer: This function can describe a in natural language given the smiles string. It will describe the subgroups. 
 The tool call for this is: self.describe_molecule('smiles_goes_here'). This function will return a string of the natural language description of the molecule. You can use this to ensure that the molecule that you edited is the same as the one that you want. 
@@ -502,7 +506,7 @@ dummy_fleming_prompts = {
 
 fleming_prompts = {
     'agent_system_prompt': Fleming_copilot_prompt,
-    'initial_plan_prompt': 'Given the tools at your disposal, make a plan for addressing the query or instruction: {instruction}.  The molecule is: {molecule}. Make sure that your plan is tuned to the user query and only include necessary steps to directly respond to their query, no more no less. Do not do extra analyses that are not asked for. For instance, if asked to specifically generate a molecule, the plan should just be to generate the molecule through the generation agent, not call the inhibition, admet, or optimization agents. The exception is that you should plan to display SMILES strings for relevant molecules including generated molecules, input molecules, optimized molecules and candidates, edited molecules, etc (if and only if there are smiles that have not alraeady been displayed). Return your plan in the format 1. [Step 1], 2. [Step 2], ...In this initial plan, do not make a tool call, and do not say "finished"',
+    'initial_plan_prompt': 'Given the tools at your disposal, make a plan for addressing the query or instruction: {instruction}.  The molecule is: {molecule}. Make sure that your plan is tuned to the user query and only include necessary steps to directly respond to their query, no more no less. Do not do extra analyses that are not asked for. For instance, if asked to specifically generate a molecule, the plan should just be to generate the molecule through the generation agent, not call the inhibition, admet, or optimization agents. The exception is that you should plan to display SMILES strings for relevant molecules including generated molecules, input molecules, optimized molecules and candidates, edited molecules, etc (if and only if there are smiles that have not alraeady been displayed). Identify tasks that can be run in parallel and plan to use the run_parallel_agents tool for them. Return your plan in the format 1. [Step 1], 2. [Step 2], ... \n\nAlso, provide a Mermaid JS dependency graph of your plan wrapped in ```mermaid ... ``` blocks. This graph should show the flow of tasks and any parallel execution.\n\nIn this initial plan, do not make a tool call, and do not say "finished"',
     'summarization_prompt': 'Summarize your findings in a nuanced and detailed manner and respond to the prompt {instruction}, synthesizing the results from all of the subagents. Make sure that you are measured in your response and do not overemphasize claims. If you are not sure about something, make sure to say that you are not sure. Include the rationale and reaosoning and evidence for each claim. If a sub-agent did not explicitly use a literature review tool ("brief_literature_review", "pqa_molecular_analysis", or "literature_review"), do not mention literature reviews from that sub-agent. If you are going to include a citation, please make sure that exact citation is in a tool call result or an agent result. State clearly what was done in each step. Be sure to include the quantitative results and any pertinent results the literature review if you did it(including citations and with links). Make sure your response is directed to the users query, as this will be what is shown to the user. As this is shown to the user, make sure it is clear and concise, with all claims justfied from the work by the subagents.. Include all relevant information, including specific and quantitative results. Do not lose specific details. Do not include the Reasoning or Tool-call sections in this response. Be sure to include quantitative details as well as qualitative results. When you want to reference a model, reference the letter that it has been assigned by display_smiles_batch tool. CRUCIAL: Start your response with ANSWER:'
 }
 

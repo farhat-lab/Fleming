@@ -681,6 +681,9 @@ with gr.Blocks(css=css) as demo:
     with gr.Column(visible=True) as main_app_group:
         progress_display = gr.HTML("<div class='progress-wrapper'><div class='progress-container'><div class='progress-bar'></div></div><div class='timer-text'></div></div>", visible=False, elem_id="progress-display-container")
 
+        with gr.Accordion("Current Plan & Status", open=True, visible=False) as plan_accordion:
+            plan_display = gr.Markdown("Waiting for plan...")
+
         with gr.Row():
             with gr.Column(scale=9):
                 msg_input = gr.Textbox(
@@ -817,6 +820,10 @@ with gr.Blocks(css=css) as demo:
         batch_df_visible = False
         download_path = None
         download_visible = False
+        
+        # State for plan
+        current_plan = "Waiting for plan..."
+        plan_visible = False
 
         if _is_processing:
             if request_signature == _active_request_signature:
@@ -826,7 +833,8 @@ with gr.Blocks(css=css) as demo:
                     gr.update(interactive=False, value="Processing..."), gr.update(interactive=False, value="🚫 Reset Disabled"),
                     gr.update(visible=True),
                     batch_summary, gr.update(value=batch_df_value, visible=batch_df_visible),
-                    gr.update(value=download_path, visible=download_visible)
+                    gr.update(value=download_path, visible=download_visible),
+                    gr.update(value=current_plan, visible=plan_visible)
                 )
                 return
 
@@ -849,7 +857,8 @@ with gr.Blocks(css=css) as demo:
                 gr.update(interactive=True, value="Send"), gr.update(interactive=True, value="🗑️ Reset Conversation"),
                 gr.update(visible=False),
                 batch_summary, gr.update(value=batch_df_value, visible=batch_df_visible),
-                gr.update(value=download_path, visible=download_visible)
+                gr.update(value=download_path, visible=download_visible),
+                gr.update(value=current_plan, visible=plan_visible)
             )
             return
         
@@ -860,7 +869,8 @@ with gr.Blocks(css=css) as demo:
                 gr.update(interactive=True, value="Send"), gr.update(interactive=True, value="🗑️ Reset Conversation"), 
                 gr.update(visible=False),
                 batch_summary, gr.update(value=batch_df_value, visible=batch_df_visible),
-                gr.update(value=download_path, visible=download_visible)
+                gr.update(value=download_path, visible=download_visible),
+                gr.update(value=current_plan, visible=plan_visible)
             )
             return
 
@@ -880,7 +890,8 @@ with gr.Blocks(css=css) as demo:
             gr.update(interactive=False, value="Processing..."), gr.update(interactive=False, value="🚫 Reset Disabled"), 
             gr.update(visible=True, value=html_content),
             batch_summary, gr.update(value=batch_df_value, visible=batch_df_visible),
-            gr.update(value=download_path, visible=download_visible)
+            gr.update(value=download_path, visible=download_visible),
+            gr.update(value=current_plan, visible=plan_visible)
         )
 
         result_queue = queue.Queue()
@@ -965,6 +976,9 @@ with gr.Blocks(css=css) as demo:
                     elif panel == 'download':
                         download_path = data[0]
                         download_visible = True
+                    elif panel == 'plan':
+                        current_plan = data[0]
+                        plan_visible = True
                      
                     if panel in ['main', 'inner']:
                         content = data[0].content if hasattr(data[0], 'content') else str(data[0])
@@ -1002,9 +1016,10 @@ with gr.Blocks(css=css) as demo:
                     gr.update(interactive=False, value="Processing..."), gr.update(interactive=False, value="🚫 Reset Disabled"), 
                     gr.update(visible=True, value=html_content),
                     batch_summary, gr.update(value=batch_df_value, visible=batch_df_visible),
-                    gr.update(value=download_path, visible=download_visible)
+                    gr.update(value=download_path, visible=download_visible),
+                    gr.update(value=current_plan, visible=plan_visible)
                 )
-
+                
                 time.sleep(1)
         except Exception as e:
             print(f"Error in chat handler: {e}")
@@ -1026,27 +1041,28 @@ with gr.Blocks(css=css) as demo:
                 gr.update(interactive=True, value="Send"), gr.update(interactive=True, value="🗑️ Reset Conversation"), 
                 gr.update(visible=False),
                 batch_summary, gr.update(value=batch_df_value, visible=batch_df_visible),
-                gr.update(value=download_path, visible=download_visible)
+                gr.update(value=download_path, visible=download_visible),
+                gr.update(value=current_plan, visible=plan_visible)
             )
 
     # --- Event Listeners ---
     send_event = send_btn.click(
         custom_chat_handler,
         inputs=[msg_input, chatbot, inner_chatbot, molecule_gallery, csv_upload, use_synspace_checkbox],
-        outputs=[chatbot, inner_chatbot, molecule_gallery, send_btn, reset_btn, progress_display, batch_summary_display, batch_dataframe_display, download_csv_button],
+        outputs=[chatbot, inner_chatbot, molecule_gallery, send_btn, reset_btn, progress_display, batch_summary_display, batch_dataframe_display, download_csv_button, plan_display],
     ).then(lambda: (None, ""), outputs=[csv_upload, msg_input])
     
     submit_event = msg_input.submit(
         custom_chat_handler,
         inputs=[msg_input, chatbot, inner_chatbot, molecule_gallery, csv_upload, use_synspace_checkbox],
-        outputs=[chatbot, inner_chatbot, molecule_gallery, send_btn, reset_btn, progress_display, batch_summary_display, batch_dataframe_display, download_csv_button],
+        outputs=[chatbot, inner_chatbot, molecule_gallery, send_btn, reset_btn, progress_display, batch_summary_display, batch_dataframe_display, download_csv_button, plan_display],
     ).then(lambda: (None, ""), outputs=[csv_upload, msg_input])
 
     reset_btn.click(
         reset_conversation,
         outputs=[chatbot, conversation_state, molecule_gallery, send_btn, reset_btn],
         cancels=[send_event, submit_event]
-    ).then(lambda: ([], "Batch processing status will appear here.", gr.update(value=None, visible=False), gr.update(value=None, visible=False)), outputs=[inner_chatbot, batch_summary_display, batch_dataframe_display, download_csv_button])
+    ).then(lambda: ([], "Batch processing status will appear here.", gr.update(value=None, visible=False), gr.update(value=None, visible=False), gr.update(value="Waiting for plan...", visible=False)), outputs=[inner_chatbot, batch_summary_display, batch_dataframe_display, download_csv_button, plan_display])
     
 if __name__ == "__main__":
     _, local_url, share_url = demo.launch(share=True, server_name="0.0.0.0")

@@ -60,6 +60,69 @@ class Fleming(Basic_Agent):
         self._paused_agent_context = {}
         self._original_user_query = None  # Store the original user query
 
+    def run_parallel_agents(self, agent_generators):
+        """
+        Runs multiple agent generators in parallel.
+        Usage: self.run_parallel_agents([self.admet_agent(molecule, instruction), self.inhibition_agent(...)])
+        """
+        import threading
+        import queue
+        
+        # Handle single generator case just in case
+        if not isinstance(agent_generators, list):
+            agent_generators = [agent_generators]
+            
+        output_queue = queue.Queue()
+        active_threads = 0
+        final_results = [None] * len(agent_generators)
+        
+        def run_agent(idx, generator):
+            try:
+                for item in generator:
+                    if isinstance(item, dict) and item.get("type") == "final":
+                        final_results[idx] = item
+                    elif isinstance(item, dict) and item.get("type") == "paused":
+                        # We currently don't support pausing in parallel mode well
+                        # So we'll just log it and continue, effectively ignoring the pause request
+                        output_queue.put(ChatMessage(role="system", content=f"Warning: Agent {idx} requested user input, which is not supported in parallel mode. Continuing..."))
+                    else:
+                        if isinstance(item, str):
+                            output_queue.put(ChatMessage(role="assistant", content=f"[Parallel Agent {idx}] {item}"))
+                        else:
+                            output_queue.put(item)
+            except Exception as e:
+                output_queue.put(ChatMessage(role="system", content=f"Error in parallel agent {idx}: {e}"))
+            finally:
+                output_queue.put(("DONE", idx))
+
+        threads = []
+        for i, gen in enumerate(agent_generators):
+            t = threading.Thread(target=run_agent, args=(i, gen))
+            t.start()
+            threads.append(t)
+            active_threads += 1
+            
+        while active_threads > 0:
+            item = output_queue.get()
+            if isinstance(item, tuple) and item[0] == "DONE":
+                active_threads -= 1
+            else:
+                yield item
+                
+        # Combine summaries
+        summaries = []
+        all_tools_used = []
+        for i, res in enumerate(final_results):
+            if res:
+                summaries.append(f"Agent {i+1} Result: {res.get('content', '')}")
+                all_tools_used.extend(res.get("tools_used", []))
+            else:
+                summaries.append(f"Agent {i+1} Result: No summary provided.")
+                
+        combined_summary = "\n\n".join(summaries)
+        
+        yield {"type": "final", "content": combined_summary, "tools_used": all_tools_used}
+
     def batchmode_provided_csv(self, csv_path: str, steps_to_run: Optional[List[str]] = None, top_n_to_optimize: int = 100, top_n_to_plausibility: int = 100):
         """
         Runs the batch processing pipeline on a user-provided CSV file.
@@ -115,6 +178,13 @@ class Fleming(Basic_Agent):
                     tools_used = sub_output.get("tools_used", [])
                     yield 'inner', ChatMessage(role="assistant", content=f"[Fleming received from {agent_name}] {subagent_summary}")
                     return {"content": subagent_summary, "tools_used": tools_used}
+
+                elif isinstance(sub_output, dict) and sub_output.get("type") == "display_molecules":
+                    # Forward molecules to the UI
+                    yield 'molecules', sub_output.get('items', [])
+                    # Also log to inner chat
+                    labels = [i.get('label') for i in sub_output.get('items', []) if i.get('label')]
+                    yield 'inner', ChatMessage(role="assistant", content=f"[{agent_name}] Displayed {len(labels)} molecule(s): {', '.join(labels)}")
 
                 else:
                     yield 'inner', sub_output
@@ -235,6 +305,7 @@ class Fleming(Basic_Agent):
             self.conversation.append({"role": "user", "content": plan_prompt})
             initial_plan = self.llm_infer(self.conversation)
             self.conversation.append({"role": "assistant", "content": initial_plan})
+            yield 'plan', initial_plan
             yield 'inner', ChatMessage(role="assistant", content=f"[Fleming] {initial_plan}")
             self.conversation.append({"role": "user", "content": "Please begin your work based on the plan. When you have completed the user's task, use the FINISHED tool call to indicate completion."})
         
@@ -321,14 +392,22 @@ class Fleming(Basic_Agent):
                         else:
                             tool_response = self.run_function(f"Tool-call: {tool_call_str}")
                         print(f"\033[1;36;40mDEBUG: Tool response: {tool_response}\033[0m")
-                        # Handle generator-producing tools (e.g., describe_molecule, check_druglikeness)
+                        # Handle generator-producing tools (e.g., describe_molecule, check_druglikeness, run_parallel_agents)
                         if inspect.isgenerator(tool_response):
                             final_tool_result = None
                             try:
                                 while True:
                                     intermediate_step = next(tool_response)
-                                    # Stream progress from the tool
-                                    yield 'inner', ChatMessage(role="assistant", content=f"[Fleming Progress] {intermediate_step}")
+                                    
+                                    if isinstance(intermediate_step, dict) and intermediate_step.get("type") == "display_molecules":
+                                        yield 'molecules', intermediate_step.get('items', [])
+                                        labels = [i.get('label') for i in intermediate_step.get('items', []) if i.get('label')]
+                                        yield 'inner', ChatMessage(role="assistant", content=f"[Fleming] Displayed {len(labels)} molecule(s): {', '.join(labels)}")
+                                    elif isinstance(intermediate_step, ChatMessage):
+                                        yield 'inner', intermediate_step
+                                    else:
+                                        # Stream progress from the tool
+                                        yield 'inner', ChatMessage(role="assistant", content=f"[Fleming Progress] {intermediate_step}")
                             except StopIteration as e:
                                 final_tool_result = e.value
                             tool_response = final_tool_result
