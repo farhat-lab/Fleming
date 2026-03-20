@@ -40,6 +40,9 @@ __pycache__
 # C extensions
 *.so
 
+# Plots
+evaluation/generative_model/final_34_mols/plots
+
 # Distribution / packaging
 .Python
 build/
