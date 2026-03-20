@@ -8,8 +8,6 @@ def current_antibiotic_evaluation(current_tb_antibiotic_inhibition_prediction_di
 
     tb_antibiotic_prediction_df = pd.read_csv(current_tb_antibiotic_inhibition_prediction_dir)
 
-    inhibition_threshold = 0.7
-    confidence_threshold = 0.7
     uncertainty_threshold = 1-confidence_threshold
 
     high_inhibition_high_confidence = tb_antibiotic_prediction_df[(tb_antibiotic_prediction_df['inhibition'] > inhibition_threshold) & (tb_antibiotic_prediction_df['inhibition_dirichlet_uncal_uncertainty'] < uncertainty_threshold)]

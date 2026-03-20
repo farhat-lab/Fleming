@@ -78,9 +78,7 @@ def confidence_clustering(prediction_dir,
     sns.violinplot(data=cluster_sample_df)
     plt.savefig(output_dir + 'uncertainty_against_HDBSCAN_Clustering.png')
 
-    exit()
-
-    ## Kukey_hsd Test 
+    ## Kukey_hsd Test
     group0 = embedding_df[embedding_df['cluster'] == 0]['uncertainty'].to_list()
     group1 = embedding_df[embedding_df['cluster'] == 1]['uncertainty'].to_list()
     group2 = embedding_df[embedding_df['cluster'] == 2]['uncertainty'].to_list()

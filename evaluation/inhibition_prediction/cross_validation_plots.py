@@ -368,8 +368,6 @@ plt.savefig('/n/data1/hms/dbmi/farhat/alex/Mtb_Inhibition_DL_Pipeline/evaluation
 plt.savefig('/n/data1/hms/dbmi/farhat/alex/Mtb_Inhibition_DL_Pipeline/evaluation/inhibition_prediction/Cross_Validation_AUROC_evi.pdf',
             bbox_inches='tight')
 
-exit()
-
 ## AUPRC
 plt.rcParams['axes.labelsize'] = 20   # Axis labels
 plt.rcParams['xtick.labelsize'] = 20  # X-axis tick labels
@@ -382,6 +380,7 @@ for spine in ax.spines.values():
     spine.set_linewidth(line_width)
 
 # Evidential DMPNN
+evi_dmpnn_auprcs = []
 for fold in range(0,5):
     prediction_df = pd.read_csv(dmpnn_prediction_dir + f"fold_{fold}/test_pred.csv")
     true_label_df = pd.read_csv(f'/n/data1/hms/dbmi/farhat/alex/Deep_Learning_Pipeline_for_Mtb_Antibiotics_Discovery/final_checkpoints/Full_TB_Dataset_scaffold_dropout=0.2_cv=5/fold_{fold}/test_data.csv')
@@ -391,115 +390,110 @@ for fold in range(0,5):
 
     precision, recall, thresholds = precision_recall_curve(true_label_df['inhibition'],
                                                            prediction_df['inhibition'])
-    
-    auprc = auc(recall, precision)
 
-    if fold == 0:
-        ax.plot(recall, 
-                precision,
-                color = colors['Evidential DMPNN'],
-                label = r'Evidential DMPNN: AUPRC = 0.20 $\pm$ 0.01')
-    else:
-        ax.plot(recall, 
-                precision,
-                color = 'purple')
+    auprc = auc(recall, precision)
+    evi_dmpnn_auprcs.append(auprc)
+
+    ax.plot(recall,
+            precision,
+            color = colors['Evidential DMPNN'])
+
+ax.plot([], [],
+        color = colors['Evidential DMPNN'],
+        label = r'Evidential DMPNN: AUPRC = %.2f $\pm$ %.2f' % (np.mean(evi_dmpnn_auprcs), np.std(evi_dmpnn_auprcs)))
 
 # DMPNN
+dmpnn_auprcs = []
 for fold in range(0,5):
     prediction_df = pd.read_csv(dmpnn_prediction_dir + f"fold_{fold}/test_pred.csv")
     true_label_df = pd.read_csv(f'/n/data1/hms/dbmi/farhat/alex/Deep_Learning_Pipeline_for_Mtb_Antibiotics_Discovery/final_checkpoints/Full_TB_Dataset_scaffold_dropout=0.2_cv=5/fold_{fold}/test_data.csv')
 
     precision, recall, thresholds = precision_recall_curve(true_label_df['inhibition'],
                                                            prediction_df['inhibition'])
-    
-    auprc = auc(recall, precision)
 
-    if fold == 0:
-        ax.plot(recall, 
-                precision,
-                color = colors['DMPNN'],
-                label = r'DMPNN: AUPRC = 0.18 $\pm$ 0.01')
-    else:
-        ax.plot(recall, 
-                precision,
-                color = 'blue')
+    auprc = auc(recall, precision)
+    dmpnn_auprcs.append(auprc)
+
+    ax.plot(recall,
+            precision,
+            color = colors['DMPNN'])
+
+ax.plot([], [],
+        color = colors['DMPNN'],
+        label = r'DMPNN: AUPRC = %.2f $\pm$ %.2f' % (np.mean(dmpnn_auprcs), np.std(dmpnn_auprcs)))
     
 # EGNN
+egnn_auprcs = []
 for fold in range(0,5):
     prediction_df = pd.read_csv(egnn_prediction_dir + f"fold_{fold}/test_prediction.csv")
 
     precision, recall, thresholds = precision_recall_curve(prediction_df['labels'],
                                                            prediction_df['predictions'])
-    
-    auprc = auc(recall, precision)
 
-    if fold == 0:
-        ax.plot(recall, 
-                precision,
-                color = colors['EGNN'],
-                label = r'EGNN: AUPRC = 0.14 $\pm$ 0.01')
-    else:
-        ax.plot(recall, 
-                precision,
-                color = colors['EGNN'])
+    auprc = auc(recall, precision)
+    egnn_auprcs.append(auprc)
+
+    ax.plot(recall,
+            precision,
+            color = colors['EGNN'])
+
+ax.plot([], [],
+        color = colors['EGNN'],
+        label = r'EGNN: AUPRC = %.2f $\pm$ %.2f' % (np.mean(egnn_auprcs), np.std(egnn_auprcs)))
 
 # FFNN
+ffnn_auprcs = []
 for fold in range(0,5):
     prediction_df = pd.read_csv(ffnn_prediction_dir + f"fold_{fold}/test_prediction.csv")
 
     precision, recall, thresholds = precision_recall_curve(prediction_df['labels'],
                                                            prediction_df['predictions'])
-    
-    auprc = auc(recall, precision)
-    if fold == 0:
-        ax.plot(recall, 
-                precision,
-                color = colors['FFNN'],
-                label = r'FFNN: AUPRC = 0.14 $\pm$ 0.01')
-    else:
-        ax.plot(recall, 
-                precision,
-                color = colors['FFNN'])
 
-# Transformer-M
+    auprc = auc(recall, precision)
+    ffnn_auprcs.append(auprc)
+    ax.plot(recall,
+            precision,
+            color = colors['FFNN'])
+
+ax.plot([], [],
+        color = colors['FFNN'],
+        label = r'FFNN: AUPRC = %.2f $\pm$ %.2f' % (np.mean(ffnn_auprcs), np.std(ffnn_auprcs)))
+
+# Transformer-M (only 3 folds available: fold_2, fold_3, fold_4)
+transformerm_auprcs = []
 for fold in range(0,3):
     prediction_df = pd.read_csv(fold_pred_df_list[fold])
 
     precision, recall, thresholds = precision_recall_curve(prediction_df['inhibition'],
                                                            prediction_df['pred'])
-    
-    auprc = auc(recall, precision)
 
-    if fold == 0:
-        ax.plot(recall, 
-                precision,
-                color = colors['Transformer-M'],
-                label = r'Transformer-M: AUPRC = 0.18 $\pm$ 0.01')
-    else:
-        ax.plot(recall, 
-                precision,
-                color = colors['Transformer-M'],
-                )
-        
+    auprc = auc(recall, precision)
+    transformerm_auprcs.append(auprc)
+    ax.plot(recall,
+            precision,
+            color = colors['Transformer-M'])
+
+ax.plot([], [],
+        color = colors['Transformer-M'],
+        label = r'Transformer-M: AUPRC = %.2f $\pm$ %.2f' % (np.mean(transformerm_auprcs), np.std(transformerm_auprcs)))
+
 # Random Forest
+rf_auprcs = []
 for fold in range(0,5):
     prediction_df = pd.read_csv('/home/aw274/Mtb_Inhibition_DL_Pipeline/evaluation/random_forest/' + f"fold{fold}_test_predictions.csv")
 
     precision, recall, thresholds = precision_recall_curve(prediction_df['inhibition'],
                                                            prediction_df['pred'])
-    
-    auprc = auc(recall, precision)
 
-    if fold == 0:
-        ax.plot(recall, 
-                precision,
-                color = colors['Random Forest'],
-                label = r'Random Forest: AUPRC = 0.18 $\pm$ 0.02')
-    else:
-        ax.plot(recall, 
-                precision,
-                color = colors['Random Forest'],
-                )
+    auprc = auc(recall, precision)
+    rf_auprcs.append(auprc)
+    ax.plot(recall,
+            precision,
+            color = colors['Random Forest'])
+
+ax.plot([], [],
+        color = colors['Random Forest'],
+        label = r'Random Forest: AUPRC = %.2f $\pm$ %.2f' % (np.mean(rf_auprcs), np.std(rf_auprcs)))
         
 ax.set_xlim([0, 1])
 ax.set_ylim([0, 1])

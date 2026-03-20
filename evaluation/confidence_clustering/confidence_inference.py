@@ -169,7 +169,6 @@ def fp_significance(screening_results_dir: str,
     ax.spines[['right','top']].set_visible(False)
 
     plt.savefig('/home/aw274/Mtb_Inhibition_DL_Pipeline/evaluation/confidence_clustering/volcano_plot.png')
-    exit()
 
     feature_significance_df = feature_significance_df[feature_significance_df['pvalue']<0.0001]
 

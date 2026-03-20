@@ -1,6 +1,7 @@
-import pandas as pd 
+import pandas as pd
 import numpy as np
 from matplotlib import pyplot as plt
+from sklearn.metrics import auc
 
 models = ['FFNN','DMPNN','EGNN','RandomForest']
 
@@ -53,12 +54,14 @@ plt.close()
 # Filtered AUPRC
 plt.figure()
 ax = plt.subplot(111)
+filtered_auprcs = []
 for fold in np.arange(0,5,1):
     precision_df = pd.read_csv(f'/n/data1/hms/dbmi/farhat/alex/Deep_Learning_Pipeline_for_Mtb_Antibiotics_Discovery/cv_evaluation/inhibition_dmpnn/fold_{fold}/evidential_precision_df.csv')
     recall_df = pd.read_csv(f'/n/data1/hms/dbmi/farhat/alex/Deep_Learning_Pipeline_for_Mtb_Antibiotics_Discovery/cv_evaluation/inhibition_dmpnn/fold_{fold}/evidential_recall_df.csv')
 
     precision = precision_df.iloc[1,:].to_list()
     recall = recall_df.iloc[1,:].to_list()
+    filtered_auprcs.append(auc(recall, precision))
 
     plt.plot(recall,
              precision,
@@ -69,8 +72,8 @@ for fold in np.arange(0,5,1):
 plt.xlabel('Recall')
 plt.ylabel('Precision')
 
-ax.text(0.61,0.96, 
-        'AUPRC = 0.2393 +/- 0.0588',
+ax.text(0.61,0.96,
+        'AUPRC = %.4f +/- %.4f' % (np.mean(filtered_auprcs), np.std(filtered_auprcs)),
         verticalalignment='top')
 
 ax.spines[['right','top']].set_visible(False)
@@ -80,12 +83,14 @@ plt.close()
 # Raw AUPRC
 plt.figure()
 ax = plt.subplot(111)
+raw_auprcs = []
 for fold in np.arange(0,5,1):
     precision_df = pd.read_csv(f'/n/data1/hms/dbmi/farhat/alex/Deep_Learning_Pipeline_for_Mtb_Antibiotics_Discovery/cv_evaluation/inhibition_dmpnn/fold_{fold}/evidential_precision_df.csv')
     recall_df = pd.read_csv(f'/n/data1/hms/dbmi/farhat/alex/Deep_Learning_Pipeline_for_Mtb_Antibiotics_Discovery/cv_evaluation/inhibition_dmpnn/fold_{fold}/evidential_recall_df.csv')
 
     precision = precision_df.iloc[-1,:].to_list()
     recall = recall_df.iloc[-1,:].to_list()
+    raw_auprcs.append(auc(recall, precision))
 
     plt.plot(recall,
              precision,
@@ -96,8 +101,8 @@ for fold in np.arange(0,5,1):
 plt.xlabel('Recall')
 plt.ylabel('Precision')
 
-ax.text(0.61,0.96, 
-        'AUPRC = 0.1781 +/- 0.0100',
+ax.text(0.61,0.96,
+        'AUPRC = %.4f +/- %.4f' % (np.mean(raw_auprcs), np.std(raw_auprcs)),
         verticalalignment='top')
 
 ax.spines[['right','top']].set_visible(False)
@@ -107,17 +112,19 @@ plt.close()
 # Raw AUROC
 plt.figure()
 ax = plt.subplot(111)
+raw_aurocs = []
 for fold in np.arange(0,5,1):
     tpr_df = pd.read_csv(f'/n/data1/hms/dbmi/farhat/alex/Deep_Learning_Pipeline_for_Mtb_Antibiotics_Discovery/cv_evaluation/inhibition_dmpnn/fold_{fold}/evidential_tpr_df.csv')
     fpr_df = pd.read_csv(f'/n/data1/hms/dbmi/farhat/alex/Deep_Learning_Pipeline_for_Mtb_Antibiotics_Discovery/cv_evaluation/inhibition_dmpnn/fold_{fold}/evidential_fpr_df.csv')
 
     tpr = tpr_df.iloc[-1,:].to_list()
     fpr = fpr_df.iloc[-1,:].to_list()
+    raw_aurocs.append(auc(fpr, tpr))
 
     plt.plot(fpr,
              tpr,
              color='darkgray')
-    
+
 plt.plot([0, 1], [0, 1],'r--')
 
 plt.xlim([0, 1])
@@ -125,8 +132,8 @@ plt.ylim([0, 1])
 plt.ylabel('True Positive Rate')
 plt.xlabel('False Positive Rate')
 
-ax.text(0.05,0.96, 
-        'AUROC = 0.7586 +/- 0.0090',
+ax.text(0.05,0.96,
+        'AUROC = %.4f +/- %.4f' % (np.mean(raw_aurocs), np.std(raw_aurocs)),
         verticalalignment='top')
 
 ax.spines[['right','top']].set_visible(False)
@@ -136,17 +143,19 @@ plt.close()
 # Filtered AUROC
 plt.figure()
 ax = plt.subplot(111)
+filtered_aurocs = []
 for fold in np.arange(0,5,1):
     tpr_df = pd.read_csv(f'/n/data1/hms/dbmi/farhat/alex/Deep_Learning_Pipeline_for_Mtb_Antibiotics_Discovery/cv_evaluation/inhibition_dmpnn/fold_{fold}/evidential_tpr_df.csv')
     fpr_df = pd.read_csv(f'/n/data1/hms/dbmi/farhat/alex/Deep_Learning_Pipeline_for_Mtb_Antibiotics_Discovery/cv_evaluation/inhibition_dmpnn/fold_{fold}/evidential_fpr_df.csv')
 
     tpr = tpr_df.iloc[1,:].to_list()
     fpr = fpr_df.iloc[1,:].to_list()
+    filtered_aurocs.append(auc(fpr, tpr))
 
     plt.plot(fpr,
              tpr,
              color='darkgray')
-    
+
 plt.plot([0, 1], [0, 1],'r--')
 
 plt.xlim([0, 1])
@@ -154,8 +163,8 @@ plt.ylim([0, 1])
 plt.ylabel('True Positive Rate')
 plt.xlabel('False Positive Rate')
 
-ax.text(0.05,0.96, 
-        'AUROC = 0.8200 +/- 0.0617',
+ax.text(0.05,0.96,
+        'AUROC = %.4f +/- %.4f' % (np.mean(filtered_aurocs), np.std(filtered_aurocs)),
         verticalalignment='top')
 
 ax.spines[['right','top']].set_visible(False)

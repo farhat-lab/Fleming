@@ -2,6 +2,9 @@ import pandas as pd
 import numpy as np
 from matplotlib import pyplot as plt
 
+# Pre-computed summary statistics from a threshold sweep over 5-fold cross-validation.
+# Each entry corresponds to a confidence threshold applied during evaluation; values are
+# mean ± std over 5 folds at each threshold level.
 evidential_threshold = [0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8]
 
 dmpnn_auroc = [0.75864,0.75864,0.75868,0.75868,0.75954,0.76824,0.7903,0.81074,0.82002]

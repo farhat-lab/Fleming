@@ -51,37 +51,33 @@ youdens_index = tpr - fpr
 best_index = youdens_index.argmax()
 best_threshold = thresholds[best_index]
 print(best_threshold)
-exit()
-plt.plot(fpr, tpr, 
-         label = "DMPNN: AUROC = 0.72")
+plt.plot(fpr, tpr,
+         label = "DMPNN: AUROC = %.2f" % roc_auc_score(label['inhibition'], prediction_2['inhibition']))
 
 # EGNN
 fpr, tpr, thresholds = roc_curve(label['inhibition'], egnn_prediction['prediction'])
-youdens_index = tpr - fpr 
-plt.plot(fpr, tpr, 
-         label = "EGNN: AUROC = 0.69")
+plt.plot(fpr, tpr,
+         label = "EGNN: AUROC = %.2f" % roc_auc_score(label['inhibition'], egnn_prediction['prediction']))
 
 # FFNN
 fpr, tpr, thresholds = roc_curve(label['inhibition'], ffnn_prediction['prediction'])
-youdens_index = tpr - fpr 
-plt.plot(fpr, tpr, 
-         label = "FFNN: AUROC = 0.71")
+plt.plot(fpr, tpr,
+         label = "FFNN: AUROC = %.2f" % roc_auc_score(label['inhibition'], ffnn_prediction['prediction']))
 
 # Transformer-M
-fpr, tpr, thresholds = roc_curve(label['inhibition'], rf_prediction['prediction'])
-youdens_index = tpr - fpr 
-plt.plot(fpr, tpr, 
-         label = "Transformer-M: AUROC = 0.68")
+fpr, tpr, thresholds = roc_curve(label['inhibition'], transformerM_prediction['prediction'])
+plt.plot(fpr, tpr,
+         label = "Transformer-M: AUROC = %.2f" % roc_auc_score(label['inhibition'], transformerM_prediction['prediction']))
 
 # Random Forest
 fpr, tpr, thresholds = roc_curve(label['inhibition'], rf_prediction['prediction'])
-plt.plot(fpr, tpr, 
-         label = "Random Forest: AUROC = 0.67")
+plt.plot(fpr, tpr,
+         label = "Random Forest: AUROC = %.2f" % roc_auc_score(label['inhibition'], rf_prediction['prediction']))
 
 # Evidential DMPNN
 fpr, tpr, thresholds = roc_curve(label_hc['inhibition'], prediction_2_hc['inhibition'])
-plt.plot(fpr, tpr, 
-         label = "Evidential DMPNN: AUROC = 0.72")
+plt.plot(fpr, tpr,
+         label = "Evidential DMPNN: AUROC = %.2f" % roc_auc_score(label_hc['inhibition'], prediction_2_hc['inhibition']))
 
 plt.plot(np.arange(0,1.1,0.1), np.arange(0,1.1,0.1), 'k--')
 

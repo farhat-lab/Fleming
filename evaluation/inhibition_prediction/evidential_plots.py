@@ -4,11 +4,15 @@ from matplotlib import pyplot as plt
 
 task = ['Cross-Validation', 'External Validation']
 
+# Pre-computed summary statistics from 5-fold cross-validation and external validation runs.
+# Cross-validation values are mean ± std over 5 folds; external validation values are from
+# evaluation/inhibition_prediction/bench_validation/evaluation.py.
 dmpnn_mean_auroc = [0.7586,0.7316]
 dmpnn_auroc_err = [0.0090,0.0120]
 dmpnn_mean_auprc = [0.1781,0.2412]
 dmpnn_auprc_err = [0.0100,0.0144]
 
+# Evidential DMPNN values use confidence filter = 0.6 (uncertainty threshold = 0.4).
 evidential_mean_auroc = [0.7903,0.7652]
 evidential_auroc_err = [0.0263,0.0282]
 evidential_mean_auprc = [0.1993,0.2818]
