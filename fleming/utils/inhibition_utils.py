@@ -4,6 +4,13 @@ from typing import Dict, List, Set
 import numpy as np
 from rdkit import Chem
 
+INHIBITION_MODEL_CONTEXT = (
+    "Model evidence context: this Chemprop MTB-inhibition model should be treated as an initial quantitative prior, "
+    "not an assay-equivalent potency estimate. Robustness is higher when Dirichlet uncertainty is low and literature "
+    "or SAR for close scaffolds supports antimycobacterial activity. Robustness is lower when uncertainty is high, "
+    "the molecule is structurally unusual relative to likely training chemistry, or literature contradicts the model."
+)
+
 class InhibitionUtils(Basic_Agent):
     
     def get_chemprop_prediction(self, smiles:list,
@@ -40,7 +47,25 @@ class InhibitionUtils(Basic_Agent):
         
         for i, smiles in enumerate(smiles_list):
             preds, unc = self.get_chemprop_prediction([smiles])
-            result = f"Molecule {i+1} ({smiles}) - Model Prediction (0 ~ 1): {preds}, Model Dirichlet Uncertainty (0 ~ 1): {unc}"
+            try:
+                pred_val = float(preds[0][0]) if isinstance(preds[0], (list, np.ndarray)) else float(preds[0])
+            except Exception:
+                pred_val = preds
+            try:
+                unc_val = float(unc[0][0]) if isinstance(unc[0], (list, np.ndarray)) else float(unc[0])
+            except Exception:
+                unc_val = unc
+
+            result = (
+                f"Molecule {i+1} ({smiles}) - "
+                f"Inhibition model score (0–1, higher = more predicted active): {pred_val}; "
+                f"Dirichlet uncertainty (0–1, higher = less confident): {unc_val}. "
+                f"{INHIBITION_MODEL_CONTEXT} Bayesian-style interpretation guidance: report this raw score first, "
+                "then adjust the final assessment using uncertainty and any retrieved literature. If close analogs "
+                "lack TB activity or show liabilities, lower the adjusted confidence even when the raw score is high; "
+                "if strong scaffold-level literature supports activity and uncertainty is low, the adjusted assessment "
+                "can be more favorable."
+            )
             all_results.append(result)
         
         return "\n".join(all_results)

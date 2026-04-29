@@ -2,8 +2,19 @@ import pandas as pd
 import os
 import sys
 import argparse
-base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-sys.path.append(base_path)
+
+# Make sure local ChemMCP sources are importable.
+# Supported layouts:
+# - <repo>/utils/ChemMCP
+# - <repo>/utils/external_tools/ChemMCP
+repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+for path in [
+    repo_root,
+    os.path.join(repo_root, "utils"),
+    os.path.join(repo_root, "utils", "external_tools"),
+]:
+    if path not in sys.path:
+        sys.path.insert(0, path)
 
 from ChemMCP.src.chemmcp.tools import BbbpPredictor
 

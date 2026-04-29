@@ -1,6 +1,11 @@
 from utils.utils import *
-from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import OpenAIEmbeddings
+try:
+    from langchain_community.vectorstores import Chroma
+    from langchain_community.embeddings import OpenAIEmbeddings
+except Exception as exc:
+    Chroma = None
+    OpenAIEmbeddings = None
+    print(f"Warning: langchain_community is not available; RDKit documentation search disabled. ({exc})")
 
 
 
@@ -33,6 +38,8 @@ class MolecularEditorUtils(Basic_Agent):
         return True
     
     def get_iupac(self, smiles):
+        if converter is None:
+            return "IUPAC conversion is unavailable (missing `chemicalconverters`)."
         molecule = Chem.MolFromSmiles(smiles)
         try:
             [a.SetAtomMapNum(0) for a in molecule.GetAtoms()]
@@ -46,6 +53,8 @@ class MolecularEditorUtils(Basic_Agent):
     def get_rdkit_documentation(self, description_of_task: str):
         """
         """
+        if Chroma is None or OpenAIEmbeddings is None:
+            raise RuntimeError("langchain_community is not installed; RDKit documentation search is unavailable.")
         persist_dir = "rdkit_docs/rdkit_db"  
         embeddings = OpenAIEmbeddings(openai_api_key=self.config['openai_api_key'])  # Or whatever you used for creation
 

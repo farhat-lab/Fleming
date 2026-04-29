@@ -3,7 +3,6 @@ import re
 import os
 from openai import OpenAI
 #from molecular_describer import prompt_generator
-from tdc.single_pred import Tox, ADME
 from tqdm import tqdm
 import asyncio
 import sys
@@ -16,22 +15,18 @@ import yaml
 import json 
 import numpy as np
 import fcntl
-import pqapi
 from admet_ai import ADMETModel
 from typing import List
 import chemprop.data as data
 import chemprop
 import torch
-import synspace
 from rdkit import Chem
 from tqdm import tqdm
 from rdkit.Chem.Descriptors import qed
-from chemicalconverters import NamesConverter
 import gradio as gr
 from gradio import ChatMessage
 from utils.pqa_agent import PQA_Agent
 sys.path.append("../")
-from langchain_experimental.utilities import PythonREPL
 import time
 import inspect
 
@@ -58,7 +53,60 @@ except FileNotFoundError as e: # Specifically for fpscores.pkl.gz not found by s
     print(f"Warning: SAscore fragment file missing: {e}. SAscore will not be calculated.")
     SASEngineLoaded = False
 
-converter = NamesConverter(model_name="knowledgator/SMILES2IUPAC-canonical-base")
+try:
+    from tdc.single_pred import Tox, ADME
+except Exception as exc:
+    Tox = None
+    ADME = None
+    print(f"Warning: PyTDC is not available; TDC-based predictors disabled. ({exc})")
+
+try:
+    import pqapi  # noqa: F401
+except Exception as exc:
+    pqapi = None
+    print(f"Warning: pqapi is not available; PQApi features disabled. ({exc})")
+
+try:
+    import synspace  # noqa: F401
+except Exception as exc:
+    synspace = None
+    print(f"Warning: synspace is not available; some optimization features may be disabled. ({exc})")
+
+try:
+    from chemicalconverters import NamesConverter
+except Exception as exc:
+    NamesConverter = None
+    print(f"Warning: chemicalconverters is not available; name conversion disabled. ({exc})")
+
+try:
+    from langchain_experimental.utilities import PythonREPL
+except Exception as exc:
+    PythonREPL = None
+    print(f"Warning: langchain_experimental is not available; falling back to a minimal Python REPL. ({exc})")
+
+if NamesConverter is not None:
+    converter = NamesConverter(model_name="knowledgator/SMILES2IUPAC-canonical-base")
+else:
+    converter = None
+
+if PythonREPL is None:
+    class PythonREPL:
+        """
+        Minimal fallback for `langchain_experimental.utilities.PythonREPL`.
+        Executes code in a persistent namespace and captures stdout.
+        """
+        def __init__(self):
+            self.globals = {}
+            self.locals = self.globals
+
+        def run(self, command: str) -> str:
+            import contextlib
+            import io
+
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                exec(command, self.globals, self.locals)
+            return buf.getvalue()
 import dotenv
 dotenv.load_dotenv()
 
@@ -337,6 +385,99 @@ class Basic_Agent(PQA_Agent):
         """Alias for display_smiles (robustness to naming variations)."""
         return self.display_smiles(smiles, label_letter)
 
+    def run_parallel_tools(self, tool_calls, max_workers: int = 3):
+        """
+        Run independent local tool calls concurrently within a subagent.
+
+        Usage:
+          Tool-call: self.run_parallel_tools(["self.describe_molecule('CCO')", "self.get_chemprop_prediction_string('CCO')"])
+
+        Each item must be a string containing a self.<tool>(...) call. Do not use this for
+        ask_user, FINISHED, or dependent calls where one result is needed to form another call.
+        """
+        import queue
+        import threading
+
+        if isinstance(tool_calls, str):
+            tool_calls = [tool_calls]
+        if not isinstance(tool_calls, (list, tuple)) or len(tool_calls) == 0:
+            return "No parallel tool calls were provided."
+
+        max_workers = max(1, min(int(max_workers or 3), 5, len(tool_calls)))
+        output_queue = queue.Queue()
+        results = [None] * len(tool_calls)
+        blocked_tools = {"ask_user", "FINISHED", "run_parallel_tools"}
+
+        def _tool_name(call: str):
+            match = re.match(r"\s*self\.(\w+)\s*\(", str(call))
+            return match.group(1) if match else None
+
+        def _run_one(idx, call):
+            call = str(call).strip()
+            name = _tool_name(call)
+            if not name:
+                results[idx] = f"ERROR: Invalid parallel tool call syntax: {call}"
+                output_queue.put(("DONE", idx))
+                return
+            if name in blocked_tools:
+                results[idx] = f"ERROR: {name} cannot be run inside run_parallel_tools."
+                output_queue.put(("DONE", idx))
+                return
+
+            try:
+                if hasattr(self, 'tools_called_in_current_run'):
+                    self.tools_called_in_current_run.append(f"parallel:{name}")
+
+                output_queue.put(ChatMessage(role="assistant", content=f"[{self.agent_name} Parallel] Starting {name}"))
+                response = eval(call)
+
+                if inspect.isgenerator(response):
+                    final_value = None
+                    try:
+                        while True:
+                            intermediate = next(response)
+                            output_queue.put(ChatMessage(role="assistant", content=f"[{self.agent_name} Parallel:{name}] {intermediate}"))
+                    except StopIteration as stop:
+                        final_value = stop.value
+                    response = final_value
+
+                if response == Basic_Agent.USER_INPUT_SENTINEL:
+                    response = f"ERROR: {name} requested user input, which is not supported in parallel mode."
+
+                results[idx] = response
+            except Exception as exc:
+                results[idx] = f"ERROR running {name}: {exc}"
+            finally:
+                output_queue.put(("DONE", idx))
+
+        active_threads = 0
+        next_idx = 0
+
+        def _start_next():
+            nonlocal active_threads, next_idx
+            if next_idx >= len(tool_calls):
+                return
+            thread = threading.Thread(target=_run_one, args=(next_idx, tool_calls[next_idx]), daemon=True)
+            thread.start()
+            next_idx += 1
+            active_threads += 1
+
+        for _ in range(max_workers):
+            _start_next()
+
+        while active_threads > 0:
+            item = output_queue.get()
+            if isinstance(item, tuple) and item[0] == "DONE":
+                active_threads -= 1
+                _start_next()
+            else:
+                yield item
+
+        combined = []
+        for idx, (call, result) in enumerate(zip(tool_calls, results), start=1):
+            combined.append(f"Parallel tool {idx}: {call}\nResult:\n{result}")
+        return "\n\n".join(combined)
+
     def run_agent_loop(self, molecule: str = None, instruction: str = ""):
         """
         Main execution loop for a sub-agent.
@@ -346,7 +487,7 @@ class Basic_Agent(PQA_Agent):
         self.tools_called_in_current_run = [] # Reset for each run
         print(f"\033[1;91;40mRunning Agent: {self.agent_name} for molecule: {molecule}\033[0m")
 
-        if not hasattr(self, 'conversation') or not len(self.conversation):
+        if not hasattr(self, 'conversation') or len(self.conversation) <= 1:
             print(f"\033[1;36;40m{self.agent_name} starting fresh conversation for a new task.\033[0m")
             self.conversation = [{"role": "system", "content": self.system_prompt}]
             if self.agent_name == 'Molecular Generation Agent':
@@ -1460,7 +1601,6 @@ def is_likely_smiles(candidate):
         return False
     
     return True
-
 
 
 

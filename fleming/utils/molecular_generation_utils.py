@@ -35,6 +35,13 @@ except ImportError as e:
 
 from utils.utils import Basic_Agent
 
+INHIBITION_MODEL_CONTEXT = (
+    "Model evidence context: this Chemprop MTB-inhibition model should be treated as an initial quantitative prior, "
+    "not an assay-equivalent potency estimate. Robustness is higher when Dirichlet uncertainty is low and literature "
+    "or SAR for close scaffolds supports antimycobacterial activity; it is lower when uncertainty is high or the "
+    "literature contradicts the prediction."
+)
+
 class MolecularGenerationUtils(Basic_Agent):
     def __init__(self, config, agent_name: str = "Molecular Generation Utils", gradio: bool = False, prompts: dict = None):
         super().__init__(config, agent_name, gradio, prompts)
@@ -42,7 +49,7 @@ class MolecularGenerationUtils(Basic_Agent):
         # Load paths from config or use defaults
         self.diffusion_model_path = self.config.get('diffusion_model_path', "molecule_diffusion/e3_diffusion_for_molecules/outputs/TB_Diffusion_resume")
         self.diffusion_cache_path = self.config.get('diffusion_cache_path', "data/diffusion_mols_cache.pkl")
-        self.chemprop_model_path = self.config.get('chemprop_model_path', "model_checkpoints/final_model/fold_0/model_0/model.pt")
+        self.chemprop_model_path = self.config.get('chemprop_model_path', "model_checkpoints/model.pt")
         
     # Note: calculate_novelty and get_novelty_and_sascore are inherited from Basic_Agent
 
@@ -242,7 +249,12 @@ class MolecularGenerationUtils(Basic_Agent):
         
         for i, smiles in enumerate(smiles_list):
             preds, unc = self.get_chemprop_prediction([smiles])
-            result = f"Molecule {i+1} ({smiles}) - Model Prediction (0 ~ 1): {preds}, Model Dirichlet Uncertainty (0 ~ 1): {unc}"
+            result = (
+                f"Molecule {i+1} ({smiles}) - Model Prediction (0 ~ 1): {preds}, "
+                f"Model Dirichlet Uncertainty (0 ~ 1; higher = less confident): {unc}. "
+                f"{INHIBITION_MODEL_CONTEXT} Report the raw score first, then adjust the final assessment using "
+                "uncertainty, model robustness, and any retrieved literature."
+            )
             all_results.append(result)
         
         return "\n".join(all_results)

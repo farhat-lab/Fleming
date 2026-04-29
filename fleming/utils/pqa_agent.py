@@ -1,4 +1,8 @@
-import pqapi
+try:
+	import pqapi
+except Exception as exc:
+	pqapi = None
+	print(f"Warning: pqapi is not available; PQA features disabled. ({exc})")
 import pandas as pd
 import re
 import os
@@ -26,6 +30,8 @@ class PQA_Agent():
 	# 	pass
 
 	async def launch_pqa(self, sub_structure, property_interest):
+		if pqapi is None:
+			raise RuntimeError("pqapi is not installed/configured; cannot run PQA queries.")
 		print(f"Is the presence of a {sub_structure} substructure in a drug associated with improved tuberculosis inhibition compared to similar compounds without it?")
 		response = await pqapi.agent_query(f"Is the presence of a {sub_structure} substructure in a drug associated with improved tuberculosis inhibition compared to similar compounds without it?")
 		return response.answer.answer
@@ -36,6 +42,8 @@ class PQA_Agent():
 		return results
 	
 	def launch_pqa_queries_sync(self, sub_structures, property_interest):
+		if pqapi is None:
+			raise RuntimeError("pqapi is not installed/configured; cannot run PQA queries.")
 		queries = []
 		for sub_structure in sub_structures:
 			queries.append(f"How does the presence of a {sub_structure} substructure influence {property_interest}, both favorably and unfavorably?")
@@ -342,5 +350,4 @@ if __name__ == '__main__':
 	config_path = "/home/unix/yektefai/Fleming/FlemingDev/configs/fleming.yaml"
 	pqa_agent = PQA_Agent(config_path)
 	pqa_agent('CC1=C(C(=O)NC2=CN=CC=C2)SN=N1', 'Is this small molecule likely to be toxic to the liver?')
-
 

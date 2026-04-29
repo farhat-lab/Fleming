@@ -4,19 +4,89 @@ import sys
 import threading
 import queue
 sys.stdout.flush()
-import spaces
+try:
+    import spaces
+except ImportError:
+    spaces = None
 import gradio as gr
+import gradio_client.utils as gradio_client_utils
 import os
 from PIL import Image
 import base64
 import io
 import csv
 import json
+from starlette.templating import Jinja2Templates
 
-import os
-from main_fleming import Fleming
+os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib-fleming")
+
+
+def _patch_gradio_schema_parser():
+    """
+    Gradio 4.44.x can emit JSON schema fragments like `additionalProperties: true`
+    for Chatbot message/file metadata, but gradio_client's parser assumes a dict.
+    That breaks API metadata generation on app load for `type="messages"` chatbots.
+    """
+    original = getattr(gradio_client_utils, "_json_schema_to_python_type", None)
+    if original is None or getattr(original, "_fleming_patched", False):
+        return
+
+    def _safe_json_schema_to_python_type(schema, defs):
+        if isinstance(schema, bool):
+            return "Any"
+        if isinstance(schema, dict) and schema.get("additionalProperties") is True:
+            schema = dict(schema)
+            schema["additionalProperties"] = {}
+        return original(schema, defs)
+
+    _safe_json_schema_to_python_type._fleming_patched = True
+    gradio_client_utils._json_schema_to_python_type = _safe_json_schema_to_python_type
+
+
+_patch_gradio_schema_parser()
+
+
+def _patch_starlette_template_response():
+    """
+    Gradio 4.44 calls `TemplateResponse(name, context)` but Starlette 1.0 expects
+    `TemplateResponse(request, name, context)`. Normalize the old Gradio call style.
+    """
+    original = getattr(Jinja2Templates, "TemplateResponse", None)
+    if original is None or getattr(original, "_fleming_patched", False):
+        return
+
+    def _compat_template_response(self, *args, **kwargs):
+        if args and isinstance(args[0], str):
+            name = args[0]
+            context = args[1] if len(args) > 1 else kwargs.pop("context", None)
+            context = context or {}
+            request = context.get("request")
+            remaining = args[2:]
+            return original(self, request, name, context, *remaining, **kwargs)
+        return original(self, *args, **kwargs)
+
+    _compat_template_response._fleming_patched = True
+    Jinja2Templates.TemplateResponse = _compat_template_response
+
+
+_patch_starlette_template_response()
+
 from utils.utils import detect_smiles_in_text, is_likely_smiles
-from utils.automatic_mode_utils import Batch_Mode_Utils
+try:
+    from main_fleming import Fleming
+except Exception as exc:
+    Fleming = None
+    _LEGACY_IMPORT_ERROR = exc
+else:
+    _LEGACY_IMPORT_ERROR = None
+
+try:
+    from main_fleming_sdk import FlemingSDKInterface
+except Exception as exc:
+    FlemingSDKInterface = None
+    _SDK_IMPORT_ERROR = exc
+else:
+    _SDK_IMPORT_ERROR = None
 
 import pandas as pd
 
@@ -41,6 +111,10 @@ def display_image(image_path):
 DESCRIPTION = f'''
 <div style="text-align: center;">
   <h1 style="font-size: 32px; margin-bottom: 10px;">Fleming: An AI Agent for Drug-Discovery in Tuberculosis</h1>
+  <p style="font-size: 18px; opacity: 0.78; max-width: 900px; margin: 0 auto;">
+    A medicinal-chemistry copilot for screening, optimization, and molecule-level reasoning.
+    Ask for inhibition estimates, ADMET tradeoffs, analog ideas, or concrete next-step suggestions.
+  </p>
 </div>
 '''
 INTRO = """
@@ -53,11 +127,11 @@ License goes here
 
 PLACEHOLDER = """
 <div style="padding: 30px; text-align: center; display: flex; flex-direction: column; align-items: center;">
-   <h1 style="font-size: 28px; margin-bottom: 2px; opacity: 0.55;">Agent</h1>
-   <p style="font-size: 18px; margin-bottom: 2px; opacity: 0.65;">Tips before using Agent:</p>
-   <p style="font-size: 18px; margin-bottom: 2px; opacity: 0.55;">Please click clear🗑️
- (top-right) to start a new conversation.</p>
-   <p style="font-size: 18px; margin-bottom: 2px; opacity: 0.55;">Click retry🔄 (below message)  to get multiple versions of the answer.</p>
+   <h1 style="font-size: 28px; margin-bottom: 8px; opacity: 0.7;">Fleming</h1>
+   <p style="font-size: 18px; margin-bottom: 4px; opacity: 0.72;">Try prompts like:</p>
+   <p style="font-size: 18px; margin-bottom: 4px; opacity: 0.58;">"Estimate inhibition and ADMET liabilities for CC1=CC=CC=C1"</p>
+   <p style="font-size: 18px; margin-bottom: 4px; opacity: 0.58;">"Suggest close analogs with better permeability"</p>
+   <p style="font-size: 18px; margin-bottom: 4px; opacity: 0.58;">"Compare Molecule A and Molecule B, then show the best candidates"</p>
 </div>
 """
 
@@ -264,11 +338,20 @@ new_tool_files = {
 #config_path = "configs/fleming.yaml"
 config_path = "config.yaml"
 
-# Initialize all Fleming instances
-fleming_real = Fleming(config_path)
+# Backends:
+# - legacy: `main_fleming.Fleming` (default for this iteration)
+# - sdk: `main_fleming_sdk.FlemingSDKInterface` (optional; requires extra deps/files)
+fleming_real = None
+fleming_sdk = None
 
-# Global variable to track which Fleming to use
-current_fleming_mode = "real"  # "real"
+def _get_default_backend_mode() -> str:
+    mode = os.environ.get("FLEMING_BACKEND", "").strip().lower()
+    if mode in {"legacy", "sdk"}:
+        return mode
+    # Default to legacy unless explicitly requested.
+    return "legacy"
+
+current_fleming_mode = _get_default_backend_mode()
 fleming_mode_locked = True  # Track if mode has been locked
 
 # Add a global set to track all displayed normalized SMILES
@@ -303,9 +386,37 @@ def get_or_assign_label_for_smiles(normalized_smiles: str) -> str:
             used_molecule_labels.add(candidate)
             return candidate
 
-def get_current_fleming():
+def get_current_fleming(uploaded_csv=None):
     """Get the currently selected Fleming instance"""
-    return fleming_real
+    global fleming_real
+    global fleming_sdk
+    global current_fleming_mode
+
+    # Legacy backend is always used for CSV/batch flows.
+    if uploaded_csv is not None or current_fleming_mode == "legacy":
+        if fleming_real is None:
+            if Fleming is None:
+                raise RuntimeError(
+                    "The legacy Fleming backend is unavailable in this environment. "
+                    f"Import error: {_LEGACY_IMPORT_ERROR}"
+                )
+            fleming_real = Fleming(config_path)
+        return fleming_real
+
+    # Optional SDK backend.
+    if current_fleming_mode == "sdk":
+        if FlemingSDKInterface is None:
+            raise RuntimeError(
+                "FLEMING_BACKEND=sdk was requested but the SDK backend is unavailable. "
+                f"Import error: {_SDK_IMPORT_ERROR}"
+            )
+        if fleming_sdk is None:
+            fleming_sdk = FlemingSDKInterface(config_path)
+        return fleming_sdk
+
+    # Should never happen, but keep a safe default.
+    current_fleming_mode = "legacy"
+    return get_current_fleming(uploaded_csv=uploaded_csv)
 
 
 # Update the global fleming variable to use the current selection
@@ -317,16 +428,12 @@ _active_request_signature = None
 _last_completed_request_signature = None
 _last_completed_request_time = 0.0
 
-# Initialize interruption flags for all agents (with safe attribute setting)
-# Set interrupt flags for Fleming instances
-if hasattr(fleming_real, '_interrupt_requested'):
-    fleming_real._interrupt_requested = False
-else:
-    fleming_real._interrupt_requested = False
+# Initialize interruption flags only for instantiated backends.
+for fleming_instance in [inst for inst in [fleming_real, fleming_sdk] if inst is not None]:
+    fleming_instance._interrupt_requested = False
 
 # Set interrupt flags for subagents
-#for fleming_instance in [fleming_real, fleming_dummy]:
-for fleming_instance in [fleming_real]:
+for fleming_instance in [inst for inst in [fleming_real] if inst is not None]:
     subagents = ['admet_agent', 'inhibition_agent', 'optimization_agent', 'molecular_reasoner_agent', 'generate_agent']
     for agent_name in subagents:
         if hasattr(fleming_instance, agent_name):
@@ -408,15 +515,12 @@ def extract_smiles_from_label(label):
     
     return None
 
-def enhance_message_with_molecules(content, role="assistant"):
+def enhance_message_with_molecules(content, role="assistant", molecule_renderer=None):
     """
     Enhance a message with molecule images if SMILES are detected.
     This is purely for display purposes and doesn't affect the LLM conversation.
     Returns (enhanced_content, molecule_data_list)
     """
-    # Clean the content first if it's from an assistant
- 
-    # Detect SMILES in the content with contextual names
     detected_smiles = detect_smiles_with_context(content)
     
     if not detected_smiles:
@@ -430,7 +534,8 @@ def enhance_message_with_molecules(content, role="assistant"):
         context_name = smiles_data.get('context_name', None)
         
         try:
-            image_base64 = fleming.generate_image(smiles)
+            renderer = molecule_renderer or fleming
+            image_base64 = renderer.generate_image(smiles)
             
             if image_base64 is not None:
                 # Create a meaningful label
@@ -454,55 +559,41 @@ def enhance_message_with_molecules(content, role="assistant"):
 
 def detect_smiles_with_context(text):
     """
-    Simplified SMILES detection for specific patterns:
-    1. "Molecule A: molecule_A_smiles" (where A is a letter)
-    2. "Substructure A: Substructure_A_Smiles"
+    Detect SMILES in normal prose and preserve nearby chemistry labels when present.
     Returns a list of dictionaries with smiles, context_name, and position.
     """
     import re
-    
-    # Simplified patterns for the two specific formats
+
+    if not text:
+        return []
+
+    context_by_span = {}
     context_patterns = [
-        # "Molecule A: SMILES" (where A is a letter)
-        r'(Molecule\s+[A-Za-z]):\s*([A-Za-z0-9\[\]()=#+\-\\\/\.@]{6,})',
-        # "Substructure A: SMILES" (where A is a letter) 
-        r'(Substructure\s+[A-Za-z]):\s*([A-Za-z0-9\[\]()=#+\-\\\/\.@]{6,})',
-        # Case insensitive versions
-        r'(molecule\s+[A-Za-z]):\s*([A-Za-z0-9\[\]()=#+\-\\\/\.@]{6,})',
-        r'(substructure\s+[A-Za-z]):\s*([A-Za-z0-9\[\]()=#+\-\\\/\.@]{6,})'
+        r'((?:Molecule|Substructure|Analog|Candidate|Lead|Seed)\s+[A-Za-z0-9]+)\s*:\s*([A-Za-z0-9\[\]()=#+\-\\\/\.@%]{3,200})',
+        r'((?:Molecule|Substructure|Analog|Candidate|Lead|Seed)\s+[A-Za-z0-9]+)\s*\(\s*([A-Za-z0-9\[\]()=#+\-\\\/\.@%]{3,200})\s*\)',
     ]
-    
-    detected_molecules = []
-    processed_positions = set()
-    processed_smiles = set()  # Track SMILES to avoid duplicates
-    
-    # Look for the specific patterns
     for pattern in context_patterns:
-        matches = re.finditer(pattern, text, re.IGNORECASE)
-        for match in matches:
-            context_name = match.group(1).strip()
-            # Clean potential SMILES by removing spaces before validation
-            potential_smiles_raw = match.group(2).strip()
-            potential_smiles = re.sub(r'\s+', '', potential_smiles_raw)
-            
-            # Enhanced validation - must be valid SMILES and not a duplicate
-            if (is_likely_smiles(potential_smiles) and 
-                potential_smiles not in processed_smiles and
-                len(potential_smiles) >= 6):  # Minimum meaningful SMILES length
-                
-                start_pos = match.start(2)
-                end_pos = match.end(2)
-                
-                # Avoid duplicate positions
-                if (start_pos, end_pos) not in processed_positions:
-                    detected_molecules.append({
-                        'smiles': potential_smiles,
-                        'context_name': context_name.title(),  # Capitalize properly
-                        'position': (start_pos, end_pos)
-                    })
-                    processed_positions.add((start_pos, end_pos))
-                    processed_smiles.add(potential_smiles)
-    
+        for match in re.finditer(pattern, text, re.IGNORECASE):
+            context_name = match.group(1).strip().title()
+            smiles = match.group(2).strip()
+            start_pos = match.start(2)
+            end_pos = start_pos + len(smiles)
+            context_by_span[(start_pos, end_pos, smiles)] = context_name
+
+    detected_molecules = []
+    processed_smiles = set()
+
+    for smiles, start_pos, end_pos in detect_smiles_in_text(text):
+        if smiles in processed_smiles:
+            continue
+        context_name = context_by_span.get((start_pos, end_pos, smiles))
+        detected_molecules.append({
+            'smiles': smiles,
+            'context_name': context_name,
+            'position': (start_pos, end_pos)
+        })
+        processed_smiles.add(smiles)
+
     return detected_molecules
 
 
@@ -687,7 +778,7 @@ with gr.Blocks(css=css) as demo:
         with gr.Row():
             with gr.Column(scale=9):
                 msg_input = gr.Textbox(
-                    placeholder="Type your message here...",
+                    placeholder="Ask Fleming to analyze, compare, optimize, or generate TB-focused molecules...",
                     show_label=False,
                     scale=1
                 )
@@ -696,8 +787,8 @@ with gr.Blocks(css=css) as demo:
             with gr.Column(scale=1):
                 reset_btn = gr.Button("🗑️ Reset", variant="secondary", scale=1)
 
-        gr.Markdown("""On the **left**, you will find the main conversation. All messages that you need to view will show up here. In the **middle**, you will find Fleming's thought process, which will include all the results of the tool calls that it runs. This can help you audit Fleming's reasoning, but is not necessary. On the **right**, molecules that are mentioned in the chat will be displayed.""")
-        gr.Markdown("To analyze more than 10 molecules, upload a CSV with one column labeled SMILES.")
+        gr.Markdown("""On the **left** is the working conversation with Fleming. In the **middle** you can inspect tool use and intermediate reasoning. On the **right** any molecules Fleming highlights will be rendered so you can compare structures visually.""")
+        gr.Markdown("For batch ranking, upload a CSV with a single `SMILES` column.")
         csv_upload = gr.File(label="Upload SMILES CSV", file_types=[".csv"])
         use_synspace_checkbox = gr.Checkbox(label="Use Synspace for Neighbors", value=False)
 
@@ -705,7 +796,7 @@ with gr.Blocks(css=css) as demo:
             with gr.Column(scale=3):
                 chatbot = gr.Chatbot(
                     height=400, 
-                    placeholder="<div style='text-align: center; padding: 20px; opacity: 0.6;'>Your main conversation with Fleming will appear here.</div>",
+                    placeholder="<div style='text-align: center; padding: 20px; opacity: 0.68;'>Fleming will answer here with recommendations, tradeoffs, and next-step suggestions.</div>",
                     label='Main Conversation', 
                     type="messages", 
                     show_copy_button=True
@@ -714,7 +805,7 @@ with gr.Blocks(css=css) as demo:
             with gr.Column(scale=3):
                 inner_chatbot = gr.Chatbot(
                     height=400,
-                    placeholder="<div style='text-align: center; padding: 20px; opacity: 0.6;'>View Fleming's step-by-step reasoning and tool usage here. This view is optional.</div>",
+                    placeholder="<div style='text-align: center; padding: 20px; opacity: 0.68;'>Optional audit trail: tool calls, intermediate checks, and molecule-display events appear here.</div>",
                     label="Fleming's Inner Thoughts (Optional)",
                     type="messages",
                     show_copy_button=True
@@ -761,7 +852,7 @@ with gr.Blocks(css=css) as demo:
                 'molecular_reasoner_agent', 'generate_agent'
             ]
 
-            for fleming_instance in [fleming_real]:
+            for fleming_instance in [inst for inst in [fleming_real, fleming_sdk] if inst is not None]:
                 setattr(fleming_instance, '_interrupt_requested', True)
                 if hasattr(fleming_instance, '_active_subagent_calls'):
                     try:
@@ -797,6 +888,12 @@ with gr.Blocks(css=css) as demo:
                         if hasattr(agent, '_is_waiting_for_user_input'):
                             agent._is_waiting_for_user_input = False
 
+                if hasattr(fleming_instance, 'reset'):
+                    try:
+                        fleming_instance.reset()
+                    except Exception:
+                        pass
+
             # brief pause to propagate interrupt flags
             time.sleep(0.1)
 
@@ -810,7 +907,7 @@ with gr.Blocks(css=css) as demo:
         import time
         start_time = time.time()
         
-        current_fleming = get_current_fleming()
+        current_fleming = get_current_fleming(uploaded_csv)
         uploaded_csv_name = getattr(uploaded_csv, "name", None) if uploaded_csv else None
         request_signature = (message.strip(), uploaded_csv_name, bool(use_synspace))
         
@@ -876,7 +973,7 @@ with gr.Blocks(css=css) as demo:
 
         _is_processing = True
         _active_request_signature = request_signature
-        mode_name = "Fleming" if current_fleming_mode == "real" else "Fleming"
+        mode_name = "Fleming SDK" if current_fleming is fleming_sdk else "Fleming"
         print(f"🔄 Starting request processing with {mode_name}")
         
         main_chat_history = list(history)
@@ -947,7 +1044,7 @@ with gr.Blocks(css=css) as demo:
                                 if normalized_smiles and normalized_smiles not in all_displayed_smiles:
                                     # Assign persistent label per SMILES
                                     assigned_label = get_or_assign_label_for_smiles(normalized_smiles)
-                                    image_base64 = fleming.generate_image(smiles)
+                                    image_base64 = current_fleming.generate_image(smiles)
                                     if image_base64 is None:
                                         continue
                                     try:
@@ -982,7 +1079,7 @@ with gr.Blocks(css=css) as demo:
                      
                     if panel in ['main', 'inner']:
                         content = data[0].content if hasattr(data[0], 'content') else str(data[0])
-                        _, molecules = enhance_message_with_molecules(content)
+                        _, molecules = enhance_message_with_molecules(content, molecule_renderer=current_fleming)
                         if molecules:
                             new_images = []
                             for mol_data in molecules:

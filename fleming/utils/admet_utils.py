@@ -53,6 +53,40 @@ desired_property = ['AMES','BBB_Martins','Bioavailability_Ma','CYP1A2_Veith','CY
                         'HydrationFreeEnergy_FreeSolv','LD50_Zhu','Lipophilicity_AstraZeneca','PPBR_AZ','Solubility_AqSolDB',
                         'VDss_Lombardo']
 
+ADMET_MODEL_CONTEXT = (
+    "Model evidence context: ADMET-AI is used as an initial quantitative prior across heterogeneous TDC-style "
+    "ADMET tasks. The pass/fail thresholds are calibrated against current antibiotic predictions when that file "
+    "is available; they are not direct clinical safety calls. Robustness is higher when several related tasks agree "
+    "and the value is clearly on the favorable side of the threshold, and lower when predictions are close to a "
+    "threshold, unsupported by task-specific training coverage, or contradicted by literature on similar scaffolds."
+)
+
+CHEMMCP_MODEL_CONTEXT = {
+    "side_effect": (
+        "Model evidence context: side-effect profile model trained on 22,820 molecules. Treat as a relatively broad "
+        "screening prior, but reconcile with known adverse-event literature for the exact scaffold or close analogs."
+    ),
+    "solubility": (
+        "Model evidence context: solubility model trained on 888 molecules. This is a small dataset, so literature or "
+        "measured solubility for similar ionization states/scaffolds should substantially affect the final judgment."
+    ),
+    "toxicity": (
+        "Model evidence context: toxicity model trained on 1,114 molecules. This is a modest dataset; if literature "
+        "reports toxicity for close analogs or reactive/toxicophores, down-weight reassuring predictions."
+    ),
+    "bbbp": (
+        "Model evidence context: BBBP model trained on 1,569 MoleculeNet molecules. Use as a modest prior and adjust "
+        "for literature on CNS penetration, polarity, charge state, P-gp liability, and close scaffold behavior."
+    ),
+}
+
+CYTOTOX_MODEL_CONTEXT = (
+    "Model evidence context: cytotoxicity predictions are Chemprop model outputs with uncertainty estimates. Treat "
+    "them as screening priors for HepG2, HSKMC, and IMR90 liability rather than definitive safety evidence. A low-risk "
+    "prediction with high uncertainty, sparse training coverage, or literature toxicity for close analogs should be "
+    "adjusted toward caution."
+)
+
 task_weight_dict = {
     ## Absorption Task:
     'Bioavailability_Ma': 1,
@@ -157,6 +191,16 @@ class ADMETUtils(Basic_Agent):
             elif 'CUDA_VISIBLE_DEVICES' in os.environ:
                 del os.environ['CUDA_VISIBLE_DEVICES']
             torch.load = _original_torch_load
+
+    @staticmethod
+    def _format_bayesian_context():
+        return (
+            f"{ADMET_MODEL_CONTEXT}\n"
+            "Bayesian-style interpretation guidance: report the raw model result first, then treat literature and "
+            "model robustness as evidence that can shift the final assessment. If literature on close analogs "
+            "conflicts with a low-risk model prediction, present a more cautious adjusted conclusion instead of "
+            "repeating the model output as fact."
+        )
         
     def get_binarized_prediction(self, smiles:list):
         '''
@@ -166,6 +210,18 @@ class ADMETUtils(Basic_Agent):
         threshold_antibiotic_dict, threshold_value_dict, threshold_type_dict = self.get_admet_threshold('model_training/current_antibiotic_admet_predictions.csv')
 
         preds = self.get_admet_prediction(smiles)
+
+        # If thresholds are unavailable (e.g., threshold file missing), return raw predictions with
+        # placeholder columns so callers don't crash.
+        if not threshold_value_dict:
+            for col in [
+                'fail_absorption', 'fail_distribution', 'fail_metabolism', 'fail_excretion', 'fail_toxicity', 'fail_sum',
+                'absorption_admet_score', 'distribution_admet_score', 'metabolism_admet_score', 'excretion_admet_score', 'toxicity_admet_score',
+                'admet_score',
+            ]:
+                preds[col] = np.nan
+            preds['thresholds_available'] = False
+            return preds
 
         for key in threshold_value_dict:  
             if threshold_type_dict[key] == 'lower':
@@ -227,6 +283,7 @@ class ADMETUtils(Basic_Agent):
         preds['admet_score'] = preds['absorption_admet_score'] + preds['distribution_admet_score'] + preds['metabolism_admet_score'] \
                               + preds['excretion_admet_score'] + preds['toxicity_admet_score']
 
+        preds['thresholds_available'] = True
         return preds
 
     def get_admet_prediction_special(self, smile:str):
@@ -260,10 +317,23 @@ class ADMETUtils(Basic_Agent):
             
             # Get the first row since we're dealing with a single molecule
             pred_row = preds.iloc[0]
+
+            if not bool(pred_row.get('thresholds_available', True)):
+                raw_table = self.get_admet_prediction_raw_table([smiles])
+                summary = (
+                    f"ADMET Prediction Summary for SMILES {i+1}: {smiles}\n\n"
+                    "Note: pass/fail thresholds are unavailable (missing `model_training/current_antibiotic_admet_predictions.csv`), "
+                    "so task-level pass/fail counts and aggregate scores are not computed.\n\n"
+                    f"{self._format_bayesian_context()}\n\n"
+                    "Raw predicted task values (model outputs):\n"
+                    f"{raw_table}"
+                )
+                all_summaries.append(summary)
+                continue
             
             summary = f"""ADMET Prediction Summary for SMILES {i+1}: {smiles}
 
-Overall ADMET Score: {pred_row['admet_score']:.2f} (higher is better, perfect score is 0.)
+Overall ADMET Score: {pred_row['admet_score']:.2f} (0 is best; more negative means more predicted failures across tasks.)
 
 Absorption Properties:
 - Score: {pred_row['absorption_admet_score']:.2f}
@@ -285,7 +355,9 @@ Toxicity Properties:
 - Score: {pred_row['toxicity_admet_score']:.2f}
 - Failed tasks: {pred_row['fail_toxicity']:.0f}/19
 
-Total Failed ADMET Tasks: {pred_row['fail_sum']:.0f}/37"""
+Total Failed ADMET Tasks: {pred_row['fail_sum']:.0f}/37
+
+{self._format_bayesian_context()}"""
             
             all_summaries.append(summary)
         
@@ -299,6 +371,16 @@ Total Failed ADMET Tasks: {pred_row['fail_sum']:.0f}/37"""
         threshold_antibiotic_dict, threshold_value_dict, threshold_type_dict = self.get_admet_threshold('model_training/current_antibiotic_admet_predictions.csv')
 
         preds = self.get_admet_prediction_batch(smiles_list)
+
+        if not threshold_value_dict:
+            for col in [
+                'fail_absorption', 'fail_distribution', 'fail_metabolism', 'fail_excretion', 'fail_toxicity', 'fail_sum',
+                'absorption_admet_score', 'distribution_admet_score', 'metabolism_admet_score', 'excretion_admet_score', 'toxicity_admet_score',
+                'admet_score',
+            ]:
+                preds[col] = np.nan
+            preds['thresholds_available'] = False
+            return preds
 
         for key in threshold_value_dict:  
             if threshold_type_dict[key] == 'lower':
@@ -360,6 +442,7 @@ Total Failed ADMET Tasks: {pred_row['fail_sum']:.0f}/37"""
         preds['admet_score'] = preds['absorption_admet_score'] + preds['distribution_admet_score'] + preds['metabolism_admet_score'] \
                               + preds['excretion_admet_score'] + preds['toxicity_admet_score']
 
+        preds['thresholds_available'] = True
         return preds
     
     @staticmethod
@@ -469,7 +552,13 @@ Total Failed ADMET Tasks: {pred_row['fail_sum']:.0f}/37"""
                 preds_list.append(preds)
                 uncertainties_list.append(uncertainties)
 
-            result = f"For molecule {i+1} ({smiles}), the predicted hepatocyte toxicity prediction is {preds_list[0]} with an uncertainty of {uncertainties_list[0]}. The predicted skeletal muscle toxicity prediction is {preds_list[1]} with an uncertainty of {uncertainties_list[1]}. The predicted lung (imr90) toxicity prediction is {preds_list[2]} with an uncertainty of {uncertainties_list[2]}."
+            result = (
+                f"For molecule {i+1} ({smiles}), the predicted hepatocyte toxicity prediction is {preds_list[0]} "
+                f"with an uncertainty of {uncertainties_list[0]}. The predicted skeletal muscle toxicity prediction "
+                f"is {preds_list[1]} with an uncertainty of {uncertainties_list[1]}. The predicted lung (imr90) "
+                f"toxicity prediction is {preds_list[2]} with an uncertainty of {uncertainties_list[2]}. "
+                f"{CYTOTOX_MODEL_CONTEXT} Report raw model outputs separately from any literature-adjusted conclusion."
+            )
             all_results.append(result)
         
         return "\n\n".join(all_results)
@@ -580,7 +669,10 @@ Total Failed ADMET Tasks: {pred_row['fail_sum']:.0f}/37"""
         return "\n".join(lines)
     
     def get_side_effect_prediction(self, smiles_list):
-        answer = "The following is the side effect prediction profile, trained on 22820 molecules, for the following molecules: \n"
+        answer = (
+            "The following is the side effect prediction profile, trained on 22820 molecules, for the following molecules: \n"
+            f"{CHEMMCP_MODEL_CONTEXT['side_effect']}\n"
+        )
         
         if isinstance(smiles_list, str):
             smiles_list = [smiles_list]
@@ -602,7 +694,10 @@ Total Failed ADMET Tasks: {pred_row['fail_sum']:.0f}/37"""
         return answer
     
     def get_solubility_prediction(self, smiles_list):
-        answer = "The following is the solubility prediction, trained on 888 molecules, for the following molecules: \n"
+        answer = (
+            "The following is the solubility prediction, trained on 888 molecules, for the following molecules: \n"
+            f"{CHEMMCP_MODEL_CONTEXT['solubility']}\n"
+        )
         
         if isinstance(smiles_list, str):
             smiles_list = [smiles_list]
@@ -624,7 +719,10 @@ Total Failed ADMET Tasks: {pred_row['fail_sum']:.0f}/37"""
         return answer
     
     def get_toxicity_prediction(self, smiles_list): 
-        answer = "The following is the toxicity prediction, trained on 1114 molecules, for the following molecules: \n"
+        answer = (
+            "The following is the toxicity prediction, trained on 1114 molecules, for the following molecules: \n"
+            f"{CHEMMCP_MODEL_CONTEXT['toxicity']}\n"
+        )
         
         if isinstance(smiles_list, str):
             smiles_list = [smiles_list]
@@ -646,7 +744,10 @@ Total Failed ADMET Tasks: {pred_row['fail_sum']:.0f}/37"""
         return answer
     
     def get_bbbp_prediction(self, smiles_list):
-        answer = "The following is the bbbp prediction, trained on 1569 molecules, for the following molecules: \n"
+        answer = (
+            "The following is the bbbp prediction, trained on 1569 molecules, for the following molecules: \n"
+            f"{CHEMMCP_MODEL_CONTEXT['bbbp']}\n"
+        )
         
         if isinstance(smiles_list, str):
             smiles_list = [smiles_list]

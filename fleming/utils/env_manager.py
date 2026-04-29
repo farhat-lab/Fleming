@@ -3,6 +3,12 @@ import subprocess
 import os
 import yaml
 
+def get_project_root() -> str:
+    """
+    Return the project root directory (repo root), assuming this file lives in `utils/`.
+    """
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
 def get_conda_command():
     """
     Detect available conda environment manager and return the appropriate command.
@@ -58,9 +64,21 @@ def run_chemmcp_script(script_relative_path, args, config_path="config.yaml"):
     # Append script path and args
     full_cmd = cmd_parts + [script_relative_path] + args
     
+    project_root = get_project_root()
+    env = os.environ.copy()
+    # Make local sources importable for the ChemMCP wrappers and any vendored tools.
+    extra_paths = [
+        project_root,
+        os.path.join(project_root, "utils"),
+        os.path.join(project_root, "utils", "external_tools"),
+    ]
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = os.pathsep.join([p for p in extra_paths if p] + ([existing] if existing else []))
+
     return subprocess.run(
         full_cmd,
+        cwd=project_root,
+        env=env,
         capture_output=True,
         text=True
     )
-

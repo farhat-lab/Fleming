@@ -21,7 +21,7 @@ Fleming is a multi-agent system designed for pharmaceutical sciences, capable of
     It is recommended to use a single environment for most tasks, although some external tools may require specific environments (see "External Tools" below).
 
     ```bash
-    conda create -n fleming python=3.10
+    conda env create -f environment.fleming.yml
     conda activate fleming
     ```
 
@@ -29,7 +29,7 @@ Fleming is a multi-agent system designed for pharmaceutical sciences, capable of
     
     Install the core requirements:
     ```bash
-    pip install -r requirements.txt
+    pip install -r requirements-core.txt
     ```
 
     *Note: The `molecule_diffusion` module has specific requirements. If you plan to use the Molecular Generation Agent, ensure you have a compatible PyTorch and RDKit version installed (see `molecule_diffusion/e3_diffusion_for_molecules/requirements.txt` for reference).*
@@ -54,6 +54,8 @@ To launch the Gradio interface:
 python run_fleming_interface.py
 ```
 
+By default the UI uses the legacy backend (`main_fleming.Fleming`). If you still have the optional SDK backend available, you can select it with `FLEMING_BACKEND=sdk`.
+
 ## 🧩 External Tools & Models
 
 Fleming relies on several external tools and models which may need to be downloaded or configured separately.
@@ -63,16 +65,19 @@ Fleming relies on several external tools and models which may need to be downloa
 The ADMET Agent uses scripts in `utils/external_tools/chemmcp_tools/` which depend on the `ChemMCP` library.
 
 1.  **Download/Install ChemMCP:**
-    Ensure the `ChemMCP` library is available. The scripts expect to find it in `utils/ChemMCP`.
+    Ensure the `ChemMCP` library is available locally. The wrappers support either layout:
+    - `utils/ChemMCP/`
+    - `utils/external_tools/ChemMCP/`
     
     If you have the source code for ChemMCP, place it at:
-    `utils/ChemMCP/`
+    `utils/ChemMCP/` (recommended)
 
 2.  **Environment:**
     If ChemMCP requires a conflicting environment, create a separate conda env (e.g., `chemtools`) and specify the run command in `config.yaml`:
     ```yaml
     chemmcp_python_cmd: "conda run -n chemtools python"
     ```
+    A starter environment file is provided at `environment.chemtools.yml`.
 
 ### Molecule Diffusion (Generation Agent)
 
@@ -102,4 +107,4 @@ These tools are included in `utils/external_tools/`.
 - **Import Errors**: Ensure you are running from the project root.
 - **Model Not Found**: Check `config.yaml` paths and ensure model checkpoints are downloaded.
 - **CUDA/GPU**: Molecular generation is faster with a GPU. Ensure PyTorch is installed with CUDA support.
-
+- **Optional deps**: If you see warnings about missing `pqapi`, `PyTDC/tdc`, `langchain_community`, `chemicalconverters`, or `synspace`, those features are disabled but the core app should still run.

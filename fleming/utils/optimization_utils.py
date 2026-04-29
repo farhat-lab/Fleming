@@ -5,9 +5,19 @@ import pandas as pd
 import numpy as np
 from rdkit import Chem
 from rdkit.Chem import AllChem, DataStructs, Descriptors
-from synspace import synspace
-from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import OpenAIEmbeddings
+try:
+    from synspace import synspace
+except Exception as exc:
+    synspace = None
+    print(f"Warning: synspace is not available; sibling generation via synspace disabled. ({exc})")
+
+try:
+    from langchain_community.vectorstores import Chroma
+    from langchain_community.embeddings import OpenAIEmbeddings
+except Exception as exc:
+    Chroma = None
+    OpenAIEmbeddings = None
+    print(f"Warning: langchain_community is not available; RDKit documentation search disabled. ({exc})")
 
 '''
 Score dictionary for ranking siblings
@@ -17,6 +27,13 @@ rank_weights = {
     'rank_admet':3,
     'rank_cytotox':1  # Added cytotoxicity rank weight
 }
+
+CYTOTOX_MODEL_CONTEXT = (
+    "Model evidence context: cytotoxicity predictions are Chemprop model outputs with uncertainty estimates. Treat "
+    "them as screening priors for HepG2, HSKMC, and IMR90 liability rather than definitive safety evidence. A low-risk "
+    "prediction with high uncertainty, sparse training coverage, or literature toxicity for close analogs should be "
+    "adjusted toward caution."
+)
 
 class OptimizationUtils(Basic_Agent):
     def __init__(self, config, agent_name: str = "Optimization Utils", gradio: bool = False, prompts: dict = None,
@@ -86,6 +103,8 @@ Format: ["SMILES1", "SMILES2", ...]
     
     @staticmethod
     def generate_siblings_SMILES(smiles:str):
+        if synspace is None:
+            raise RuntimeError("synspace is not installed; cannot generate siblings via synspace.")
         mols, sibling_props = synspace.chemical_space(smiles, num_samples = 150)
         sibling_smiles = [Chem.MolToSmiles(item) for item in mols]
         return sibling_smiles
@@ -480,13 +499,21 @@ Format: ["SMILES1", "SMILES2", ...]
                 preds_list.append(preds)
                 uncertainties_list.append(uncertainties)
 
-            result = f"For molecule {i+1} ({smiles}), the predicted hepatocyte toxicity prediction is {preds_list[0]} with an uncertainty of {uncertainties_list[0]}. The predicted skeletal muscle toxicity prediction is {preds_list[1]} with an uncertainty of {uncertainties_list[1]}. The predicted lung (imr90) toxicity prediction is {preds_list[2]} with an uncertainty of {uncertainties_list[2]}."
+            result = (
+                f"For molecule {i+1} ({smiles}), the predicted hepatocyte toxicity prediction is {preds_list[0]} "
+                f"with an uncertainty of {uncertainties_list[0]}. The predicted skeletal muscle toxicity prediction "
+                f"is {preds_list[1]} with an uncertainty of {uncertainties_list[1]}. The predicted lung (imr90) "
+                f"toxicity prediction is {preds_list[2]} with an uncertainty of {uncertainties_list[2]}. "
+                f"{CYTOTOX_MODEL_CONTEXT} Report raw model outputs separately from any literature-adjusted conclusion."
+            )
             all_results.append(result)
         
         return "\n\n".join(all_results)
     def get_rdkit_documentation(self, description_of_task: str):
         """
         """
+        if Chroma is None or OpenAIEmbeddings is None:
+            raise RuntimeError("langchain_community is not installed; RDKit documentation search is unavailable.")
         persist_dir = "../rdkit_docs/rdkit_db"  # Must match the one you used when saving
         embeddings = OpenAIEmbeddings(openai_api_key=self.config['openai_api_key'])  # Or whatever you used for creation
 

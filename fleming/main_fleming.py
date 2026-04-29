@@ -176,7 +176,10 @@ class Fleming(Basic_Agent):
                 elif isinstance(sub_output, dict) and sub_output.get("type") == "final":
                     subagent_summary = sub_output["content"]
                     tools_used = sub_output.get("tools_used", [])
-                    yield 'inner', ChatMessage(role="assistant", content=f"[Fleming received from {agent_name}] {subagent_summary}")
+                    # Show final sub-agent results in the main (left) chat, and keep the inner (middle)
+                    # chat focused on intermediate reasoning/steps.
+                    yield 'main', ChatMessage(role="assistant", content=f"[{agent_name} Summary] {subagent_summary}")
+                    yield 'inner', ChatMessage(role="system", content=f"[Sub-agent complete] {agent_name} returned a summary and {len(tools_used)} tool(s) used.")
                     return {"content": subagent_summary, "tools_used": tools_used}
 
                 elif isinstance(sub_output, dict) and sub_output.get("type") == "display_molecules":
