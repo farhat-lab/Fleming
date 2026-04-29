@@ -1,9 +1,4 @@
 from utils.utils import *
-from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import OpenAIEmbeddings
-
-
-
 
 class MolecularEditorUtils(Basic_Agent):
     
@@ -46,6 +41,9 @@ class MolecularEditorUtils(Basic_Agent):
     def get_rdkit_documentation(self, description_of_task: str):
         """
         """
+        from langchain_community.embeddings import OpenAIEmbeddings
+        from langchain_community.vectorstores import Chroma
+
         persist_dir = "rdkit_docs/rdkit_db"  
         embeddings = OpenAIEmbeddings(openai_api_key=self.config['openai_api_key'])  # Or whatever you used for creation
 

@@ -2,12 +2,9 @@ import pandas as pd
 import re
 import os
 from openai import OpenAI
-#from molecular_describer import prompt_generator
-from tdc.single_pred import Tox, ADME
 from tqdm import tqdm
 import asyncio
 import sys
-from admet_ai import ADMETModel
 from rdkit import Chem
 from rdkit.Chem import Draw, AllChem, DataStructs
 import io
@@ -16,24 +13,38 @@ import yaml
 import json 
 import numpy as np
 import fcntl
-import pqapi
-from admet_ai import ADMETModel
 from typing import List
 import chemprop.data as data
 import chemprop
 import torch
-import synspace
-from rdkit import Chem
-from tqdm import tqdm
 from rdkit.Chem.Descriptors import qed
-from chemicalconverters import NamesConverter
-import gradio as gr
-from gradio import ChatMessage
-from utils.pqa_agent import PQA_Agent
 sys.path.append("../")
-from langchain_experimental.utilities import PythonREPL
 import time
 import inspect
+from dataclasses import dataclass
+
+try:
+    from chemicalconverters import NamesConverter
+except ImportError:
+    NamesConverter = None
+
+try:
+    import gradio as gr
+    from gradio import ChatMessage
+except ImportError:
+    gr = None
+
+    @dataclass
+    class ChatMessage:
+        role: str
+        content: str
+
+try:
+    from langchain_experimental.utilities import PythonREPL
+except ImportError:
+    PythonREPL = None
+
+from utils.pqa_agent import PQA_Agent
 
 import multiprocessing # Added import
 from utils.pqa_agent import PQA_Agent
@@ -58,7 +69,12 @@ except FileNotFoundError as e: # Specifically for fpscores.pkl.gz not found by s
     print(f"Warning: SAscore fragment file missing: {e}. SAscore will not be calculated.")
     SASEngineLoaded = False
 
-converter = NamesConverter(model_name="knowledgator/SMILES2IUPAC-canonical-base")
+converter = None
+if NamesConverter is not None:
+    try:
+        converter = NamesConverter(model_name="knowledgator/SMILES2IUPAC-canonical-base")
+    except Exception as exc:
+        print(f"Warning: could not initialize IUPAC converter: {exc}")
 import dotenv
 dotenv.load_dotenv()
 
@@ -80,8 +96,9 @@ class Basic_Agent(PQA_Agent):
         self.backend = self.config.get('openai_backend', 'openai')
         self.openai_api_key = self.config['openai_api_key']
 
-        self.pqapi_token = self.config['pqapi_token']
-        os.environ['PQA_API_TOKEN'] = self.pqapi_token
+        self.pqapi_token = self.config.get('pqapi_token')
+        if self.pqapi_token:
+            os.environ['PQA_API_TOKEN'] = self.pqapi_token
 
         self.prompts = prompts
         if self.prompts is not None:
@@ -95,8 +112,11 @@ class Basic_Agent(PQA_Agent):
 
         self.gradio = gradio
         self.latest_final_response = ''
-        self.python_repl = PythonREPL()
-        self.python_repl.locals= self.python_repl.globals
+        if PythonREPL is not None:
+            self.python_repl = PythonREPL()
+            self.python_repl.locals = self.python_repl.globals
+        else:
+            self.python_repl = None
         self.history = [] # Ensure history is initialized
         self.tools_called_in_current_run = []
         self.conversation = [{"role": "system", "content": self.system_prompt if hasattr(self, 'system_prompt') else "System ready."}]
@@ -105,6 +125,15 @@ class Basic_Agent(PQA_Agent):
         self._is_waiting_for_user_input = False
         self._question_for_user_input = None
         self._current_user_query = None  # Store current user query for context
+
+    @staticmethod
+    def _ensure_iupac_converter():
+        if converter is None:
+            raise RuntimeError(
+                "chemical-converters is not installed or failed to initialize; "
+                "IUPAC conversion is unavailable in this environment."
+            )
+        return converter
 
     def _load_novelty_engine(self):
         """Lazy-initialize the novelty engine by loading reference fingerprints."""
@@ -754,6 +783,8 @@ class Basic_Agent(PQA_Agent):
         Returns:
             String with descriptions for all molecules
         """
+        import concurrent.futures
+
         # Convert single SMILES to list
         single_molecule = isinstance(smiles_list, str)
         if single_molecule:
@@ -764,33 +795,52 @@ class Basic_Agent(PQA_Agent):
         if not isinstance(iupac_names, list):
             iupac_names = [iupac_names]  # Handle single result case
             
-        all_descriptions = []
+        all_descriptions = [""] * len(smiles_list)
         
-        for i, smiles in enumerate(smiles_list):
-            yield f"Describing molecule {i+1}/{len(smiles_list)}: {smiles}"
-            mol = Chem.MolFromSmiles(smiles)
-            if mol is None:
-                all_descriptions.append(f"Molecule {i+1}: Invalid SMILES string: {smiles}")
-                continue
+        def process_single_molecule(i, smiles):
+            try:
+                mol = Chem.MolFromSmiles(smiles)
+                if mol is None:
+                    return i, f"Molecule {i+1}: Invalid SMILES string: {smiles}"
+                    
+                image = self.generate_image(smiles)
+                iupac = iupac_names[i] if i < len(iupac_names) else f"Error getting IUPAC name for {smiles}"
                 
-            image = self.generate_image(smiles)
-            iupac = iupac_names[i] if i < len(iupac_names) else f"Error getting IUPAC name for {smiles}"
+                # Prepare prompt message
+                prompt = description_system_prompt + f"\n Here is the SMILES: {smiles} \n Here is the calculated IUPAC name: {iupac}."
+                
+                messages = [
+                    {
+                        "role": "system",
+                        "content":  f"\n Here is an example: {description_case_example}"
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ]
+                description = self.llm_infer(messages, model='gpt-5') 
+                return i, f"Molecule {i+1} ({smiles}): {description}"
+            except Exception as e:
+                return i, f"Molecule {i+1} ({smiles}): Error generating description: {e}"
+
+        # Use ThreadPoolExecutor for parallel processing
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            # Submit all tasks
+            future_to_smiles = {executor.submit(process_single_molecule, i, smiles): (i, smiles) for i, smiles in enumerate(smiles_list)}
             
-            # Prepare prompt message
-            prompt = description_system_prompt + f"\n Here is the SMILES: {smiles} \n Here is the calculated IUPAC name: {iupac}."
-            
-            messages = [
-                {
-                    "role": "system",
-                    "content":  f"\n Here is an example: {description_case_example}"
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ]
-            description = self.llm_infer(messages, model='gpt-5') 
-            all_descriptions.append(f"Molecule {i+1} ({smiles}): {description}")
+            # Yield progress as tasks complete
+            completed_count = 0
+            for future in concurrent.futures.as_completed(future_to_smiles):
+                i, smiles = future_to_smiles[future]
+                try:
+                    idx, result = future.result()
+                    all_descriptions[idx] = result
+                    completed_count += 1
+                    yield f"Described molecule {completed_count}/{len(smiles_list)}: {smiles}"
+                except Exception as exc:
+                    print(f"Molecule description generated an exception: {exc}")
+                    all_descriptions[i] = f"Molecule {i+1} ({smiles}): Error generating description"
         
         return "\n\n".join(all_descriptions)
     
@@ -813,8 +863,12 @@ class Basic_Agent(PQA_Agent):
                         processed_smiles.append(f"<BASE>ERROR_{smi}")  # Placeholder for error cases
                 
                 # Batch process with the converter
-                iupac_results = converter.smiles_to_iupac(processed_smiles, num_beams=1, 
-                                                        process_in_batch=True, batch_size=1000)
+                iupac_results = self._ensure_iupac_converter().smiles_to_iupac(
+                    processed_smiles,
+                    num_beams=1,
+                    process_in_batch=True,
+                    batch_size=1000,
+                )
                 
                 final_results = []
                 for i, (original_smi, result) in enumerate(zip(smiles, iupac_results)):
@@ -839,7 +893,7 @@ class Basic_Agent(PQA_Agent):
                 [a.SetAtomMapNum(0) for a in molecule.GetAtoms()]
                 Chem.RemoveStereochemistry(molecule)
                 smiles_no_stereo = "<BASE>"+Chem.MolToSmiles(molecule, canonical=True, kekuleSmiles=True)
-                return converter.smiles_to_iupac(smiles_no_stereo)
+                return self._ensure_iupac_converter().smiles_to_iupac(smiles_no_stereo)
             except Exception as e:
                 ()
                 return f"Error getting IUPAC name for {smiles}: {e}"
@@ -1116,17 +1170,29 @@ Format your response as:
 Base your assessment on known medicinal chemistry principles and common pharmaceutical structures."""
 
         # Individual LLM calls for plausibility assessment (as requested)
-        for smiles in smiles_list:
+        import concurrent.futures
+        
+        def assess_single_molecule(smiles):
             description = smiles_to_description.get(smiles, f"Error: Could not generate description for {smiles}")
-            yield f"Assessing plausibility for: {smiles}"
-
             conversation = [
                 {"role": "system", "content": prompt},
                 {"role": "user", "content": f"SMILES: {smiles}\nDescription: {description}"}
             ]
-
             response_str = self.llm_infer(conversation)
-            assessments[smiles] = response_str
+            return smiles, response_str
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            future_to_smiles = {executor.submit(assess_single_molecule, smiles): smiles for smiles in smiles_list}
+            
+            for future in concurrent.futures.as_completed(future_to_smiles):
+                smiles = future_to_smiles[future]
+                try:
+                    s, response_str = future.result()
+                    assessments[s] = response_str
+                    yield f"Assessed plausibility for: {s}"
+                except Exception as exc:
+                    print(f"Plausibility assessment generated an exception: {exc}")
+                    assessments[smiles] = f"Error assessing plausibility: {exc}"
 
         if single_mode:
             return assessments[smiles_list[0]]
@@ -1369,29 +1435,50 @@ def filter_siblings(sibling_screening_output:pd.DataFrame,
 
 def detect_smiles_in_text(text):
     """
-    Detect SMILES strings in text using the format 'Molecule A: <SMILES>' or 'Substructure A: <SMILES>'.
+    Detect likely SMILES strings in free text.
     Returns a list of tuples: (smiles_string, start_position, end_position)
     """
     import re
-    
-    # Pattern to match "Molecule A: SMILES_STRING" or "Substructure B: SMILES_STRING"
-    # where A, B are single uppercase letters.
-    pattern = r'(?:Molecule|Substructure)\s+[A-Z]:\s*([^\s]+)'
-    
+
+    if not text:
+        return []
+
+    def _clean_candidate(raw_candidate):
+        cleaned = raw_candidate.strip().strip("`'\"")
+        while cleaned and cleaned[-1] in ",;:":
+            cleaned = cleaned[:-1]
+        return cleaned
+
+    seen = set()
     detected_smiles = []
-    matches = re.finditer(pattern, text)
-    
-    for match in matches:
-        # The SMILES string is in group 1
-        smiles_candidate = match.group(1)
-        
-        # We can still use is_likely_smiles for further validation
+
+    # First capture explicit labeled forms like "Molecule A: CCO".
+    labeled_pattern = r'(?:Molecule|Substructure)\s+[A-Za-z0-9]+:\s*([A-Za-z0-9\[\]()=#+\-\\\/\.@%]+)'
+    for match in re.finditer(labeled_pattern, text, re.IGNORECASE):
+        raw_candidate = match.group(1)
+        smiles_candidate = _clean_candidate(raw_candidate)
+        if not smiles_candidate or smiles_candidate in seen:
+            continue
         if is_likely_smiles(smiles_candidate):
-            # The start and end positions should refer to the SMILES string itself
             start_pos = match.start(1)
-            end_pos = match.end(1)
+            end_pos = start_pos + len(smiles_candidate)
             detected_smiles.append((smiles_candidate, start_pos, end_pos))
-            
+            seen.add(smiles_candidate)
+
+    # Then scan generic token-like fragments so ordinary molecule mentions render too.
+    token_pattern = r'(?<![A-Za-z0-9])([A-Za-z0-9\[\]()=#+\-\\\/\.@%]{3,200})(?![A-Za-z0-9])'
+    for match in re.finditer(token_pattern, text):
+        raw_candidate = match.group(1)
+        smiles_candidate = _clean_candidate(raw_candidate)
+        if not smiles_candidate or smiles_candidate in seen:
+            continue
+        if not is_likely_smiles(smiles_candidate):
+            continue
+        start_pos = match.start(1)
+        end_pos = start_pos + len(smiles_candidate)
+        detected_smiles.append((smiles_candidate, start_pos, end_pos))
+        seen.add(smiles_candidate)
+
     return detected_smiles
 
 def is_likely_smiles(candidate):
@@ -1458,9 +1545,12 @@ def is_likely_smiles(candidate):
     element_pattern = r'[CNOSPF]|Cl|Br|[BHKSIVYZ]'
     if not re.search(element_pattern, candidate):
         return False
-    
+
+    try:
+        mol = Chem.MolFromSmiles(candidate)
+        if mol is None:
+            return False
+    except Exception:
+        return False
+
     return True
-
-
-
-

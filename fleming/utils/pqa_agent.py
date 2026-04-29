@@ -1,4 +1,7 @@
-import pqapi
+try:
+    import pqapi
+except ImportError:
+    pqapi = None
 import pandas as pd
 import re
 import os
@@ -25,9 +28,15 @@ class PQA_Agent():
 	# def __init__(self):
 	# 	pass
 
+	@staticmethod
+	def _require_pqapi():
+		if pqapi is None:
+			raise RuntimeError("pqapi is not installed; literature/PQA features are unavailable.")
+		return pqapi
+
 	async def launch_pqa(self, sub_structure, property_interest):
 		print(f"Is the presence of a {sub_structure} substructure in a drug associated with improved tuberculosis inhibition compared to similar compounds without it?")
-		response = await pqapi.agent_query(f"Is the presence of a {sub_structure} substructure in a drug associated with improved tuberculosis inhibition compared to similar compounds without it?")
+		response = await self._require_pqapi().agent_query(f"Is the presence of a {sub_structure} substructure in a drug associated with improved tuberculosis inhibition compared to similar compounds without it?")
 		return response.answer.answer
 	
 	async def launch_pqa_queries(self, sub_structures, property_interest):
@@ -44,8 +53,9 @@ class PQA_Agent():
 		success = False
 		while not success:
 			try:
-				jobs = [pqapi.submit_agent_job(query=q) for q in queries]
-				results = asyncio.run(pqapi.gather_pqa_results_via_polling([job['metadata']['query_id'] for job in jobs]))
+				client = self._require_pqapi()
+				jobs = [client.submit_agent_job(query=q) for q in queries]
+				results = asyncio.run(client.gather_pqa_results_via_polling([job['metadata']['query_id'] for job in jobs]))
 				return [result['response']['answer']['answer'] for result in results]
 			except Exception as e:
 				print(f"FAILED PQA with this exception {e} trying again!")
@@ -342,5 +352,4 @@ if __name__ == '__main__':
 	config_path = "/home/unix/yektefai/Fleming/FlemingDev/configs/fleming.yaml"
 	pqa_agent = PQA_Agent(config_path)
 	pqa_agent('CC1=C(C(=O)NC2=CN=CC=C2)SN=N1', 'Is this small molecule likely to be toxic to the liver?')
-
 

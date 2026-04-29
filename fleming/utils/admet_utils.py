@@ -367,32 +367,43 @@ Total Failed ADMET Tasks: {pred_row['fail_sum']:.0f}/37"""
         '''
         Function to get ADMET thresholds from the current antibiotic ADMET prediction file
         '''
-        # Resolve path relative to project root
-        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        # Resolve path relative to project root (up 3 levels from utils/admet_utils.py)
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         full_path = os.path.join(project_root, current_antibiotic_admet_prediction_dir)
         
         threshold_value_dict = {}
         threshold_antibiotic_dict = {}
         threshold_type_dict = {}
         
-        if not os.path.exists(full_path):
-             # Fallback or error
-             print(f"Warning: Threshold file not found at {full_path}")
-             # Return empty or defaults to avoid crash
-             return {}, {}, {}
+        if os.path.exists(full_path):
+            try:
+                admet_prediction = pd.read_csv(full_path)
 
-        admet_prediction = pd.read_csv(full_path)
+                for feature in lower_the_better:
+                    if feature in admet_prediction.columns:
+                        threshold_value_dict[feature] = admet_prediction[feature].quantile(0.9)
+                        threshold_antibiotic_dict[feature] = admet_prediction['Name']
+                        threshold_type_dict[feature] = 'lower'
+                for feature in higher_the_better:
+                    if feature in admet_prediction.columns:
+                        threshold_value_dict[feature] = admet_prediction[feature].quantile(0.1)
+                        threshold_antibiotic_dict[feature] = admet_prediction['Name']
+                        threshold_type_dict[feature] = 'higher'
+                
+                return threshold_antibiotic_dict, threshold_value_dict, threshold_type_dict
+            except Exception as e:
+                print(f"Error reading ADMET threshold file: {e}")
 
+        # Fallback if file missing or read error
+        print(f"Warning: Using default ADMET thresholds (0.5) as file not found at {full_path}")
+        
         for feature in lower_the_better:
-            if feature in admet_prediction.columns:
-                threshold_value_dict[feature] = admet_prediction[feature].quantile(0.9)
-                threshold_antibiotic_dict[feature] = admet_prediction['Name']
-                threshold_type_dict[feature] = 'lower'
+            threshold_value_dict[feature] = 0.5
+            threshold_type_dict[feature] = 'lower'
+            
         for feature in higher_the_better:
-            if feature in admet_prediction.columns:
-                threshold_value_dict[feature] = admet_prediction[feature].quantile(0.1)
-                threshold_antibiotic_dict[feature] = admet_prediction['Name']
-                threshold_type_dict[feature] = 'higher'
+            threshold_value_dict[feature] = 0.5
+            threshold_type_dict[feature] = 'higher'
         
         return threshold_antibiotic_dict, threshold_value_dict, threshold_type_dict
 
@@ -591,7 +602,8 @@ Total Failed ADMET Tasks: {pred_row['fail_sum']:.0f}/37"""
         
         output = run_chemmcp_script(
             script_path,
-            ['--smiles', smiles_batch]
+            ['--smiles', smiles_batch],
+            config_path=self.config_path
         )
         
         if "===RESULT===" in output.stdout:
@@ -613,7 +625,8 @@ Total Failed ADMET Tasks: {pred_row['fail_sum']:.0f}/37"""
         
         output = run_chemmcp_script(
             script_path,
-            ['--smiles', smiles_batch]
+            ['--smiles', smiles_batch],
+            config_path=self.config_path
         )
         
         if "===RESULT===" in output.stdout:
@@ -635,7 +648,8 @@ Total Failed ADMET Tasks: {pred_row['fail_sum']:.0f}/37"""
         
         output = run_chemmcp_script(
             script_path,
-            ['--smiles', smiles_batch]
+            ['--smiles', smiles_batch],
+            config_path=self.config_path
         )
         
         if "===RESULT===" in output.stdout:
@@ -657,7 +671,8 @@ Total Failed ADMET Tasks: {pred_row['fail_sum']:.0f}/37"""
         
         output = run_chemmcp_script(
             script_path,
-            ['--smiles', smiles_batch]
+            ['--smiles', smiles_batch],
+            config_path=self.config_path
         )
         
         if "===RESULT===" in output.stdout:

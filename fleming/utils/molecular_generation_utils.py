@@ -43,6 +43,8 @@ class MolecularGenerationUtils(Basic_Agent):
         self.diffusion_model_path = self.config.get('diffusion_model_path', "molecule_diffusion/e3_diffusion_for_molecules/outputs/TB_Diffusion_resume")
         self.diffusion_cache_path = self.config.get('diffusion_cache_path', "data/diffusion_mols_cache.pkl")
         self.chemprop_model_path = self.config.get('chemprop_model_path', "model_checkpoints/final_model/fold_0/model_0/model.pt")
+        self.last_generation_source = None
+        self.last_generated_smiles = []
         
     # Note: calculate_novelty and get_novelty_and_sascore are inherited from Basic_Agent
 
@@ -60,20 +62,40 @@ class MolecularGenerationUtils(Basic_Agent):
         Returns:
             Generated molecule SMILES string
         """
+        requested_device = (device or 'cuda').strip()
+        self.last_generation_source = None
+        self.last_generated_smiles = []
+
         if model_path is None:
             model_path = os.path.join(project_root, self.diffusion_model_path)
-            
+
         result = None
+        # Diffusion inference is expensive and not a good CPU path; prefer the cache when CUDA is unavailable.
+        if requested_device != 'cuda' or not torch.cuda.is_available():
+            cached = self.get_molecule_from_diffusion_cache(num_to_select=1, cache_path=None)
+            if not (isinstance(cached, str) and cached.startswith("Error")):
+                self.last_generation_source = "diffusion_cache"
+                self.last_generated_smiles = cached if isinstance(cached, list) else [cached]
+                return cached
+
         if model_name == "diffusion":
-            result = self._sample_diffusion(model_path, device)
-        else: 
-            result = self._sample_diffusion(model_path, device)
-            
+            result = self._sample_diffusion(model_path, requested_device)
+        else:
+            result = self._sample_diffusion(model_path, requested_device)
+
         # Check if result indicates an error or failure
         if isinstance(result, str) and (result.startswith("Error") or "not found" in result):
             print(f"Warning: Molecular generation failed ({result}). Falling back to diffusion cache.")
-            return self.get_molecule_from_diffusion_cache(num_to_select=1, cache_path=None)
-            
+            cached = self.get_molecule_from_diffusion_cache(num_to_select=1, cache_path=None)
+            if not (isinstance(cached, str) and cached.startswith("Error")):
+                self.last_generation_source = "diffusion_cache_fallback"
+                self.last_generated_smiles = cached if isinstance(cached, list) else [cached]
+                return cached
+            self.last_generation_source = "generation_error"
+            return cached
+
+        self.last_generation_source = "diffusion_model"
+        self.last_generated_smiles = result if isinstance(result, list) else [result]
         return result
         
         
@@ -93,16 +115,22 @@ class MolecularGenerationUtils(Basic_Agent):
         try:
             with open(cache_path, 'rb') as f:
                 cached_molecules = pickle.load(f)
-                cached_molecules = list(cached_molecules.values)
+                if isinstance(cached_molecules, dict):
+                    cached_molecules = list(cached_molecules.values())
+                elif not isinstance(cached_molecules, list):
+                    cached_molecules = list(cached_molecules)
 
-                selected_mol = random.sample(cached_molecules, num_to_select)
+                if not cached_molecules:
+                    return "Error loading cached molecules: cache is empty"
+
+                selected_mol = random.sample(cached_molecules, min(num_to_select, len(cached_molecules)))
             return selected_mol
         except Exception as e:
             return f"Error loading cached molecules: {e}"
 
     def generate_molecule_string(self, model_name: str = "diffusion", 
                                 model_path: str = None,
-                                device: str = 'cuda '):
+                                device: str = 'cuda'):
         """
         Generate a molecule and return a formatted string description.
         
@@ -125,6 +153,10 @@ class MolecularGenerationUtils(Basic_Agent):
                     generated_smiles = ", ".join(generated_smiles)
 
             if model_name == "diffusion":
+                if self.last_generation_source == "diffusion_cache":
+                    return f"Generated molecule from diffusion cache (no GPU available): {generated_smiles}"
+                if self.last_generation_source == "diffusion_cache_fallback":
+                    return f"Generated molecule from diffusion cache after diffusion sampling failed: {generated_smiles}"
                 return f"Generated molecule using Diffusion model: {generated_smiles}"
             elif model_name == "synthemol":
                 return f"Generated molecule using Synthemol model: {generated_smiles}"
@@ -196,7 +228,7 @@ class MolecularGenerationUtils(Basic_Agent):
             return f"Error in diffusion sampling: {e}"
 
     def get_chemprop_prediction(self, smiles:list,
-                                model_paths:list = None,
+                                model_paths:list = ['/n/data1/hms/dbmi/farhat/anz226/FlemingDev/model_checkpoints/final_model/fold_0/model_0/model.pt'],
                                 device:str='cpu'):
         '''
         Wrapper function to get Chemprop prediction of MTB inhibition on a list of SMILES

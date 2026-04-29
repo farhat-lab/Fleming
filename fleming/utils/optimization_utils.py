@@ -1,13 +1,15 @@
 from utils.utils import *
 from utils.admet_utils import ADMETUtils
 from utils.inhibition_utils import InhibitionUtils
+from utils.chemical_space_utils import (
+    explore_immediate_chemical_space,
+    explore_synspace,
+    tanimoto_similarity,
+)
 import pandas as pd
 import numpy as np
 from rdkit import Chem
 from rdkit.Chem import AllChem, DataStructs, Descriptors
-from synspace import synspace
-from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import OpenAIEmbeddings
 
 '''
 Score dictionary for ranking siblings
@@ -26,10 +28,21 @@ class OptimizationUtils(Basic_Agent):
         self.admet_utils = admet_utils if admet_utils is not None else ADMETUtils(config, "ADMET Utils", gradio, prompts)
         self.inhibition_utils = inhibition_utils if inhibition_utils is not None else InhibitionUtils(config, "Inhibition Utils", gradio, prompts)
         self.use_synspace = False
+        self.optimization_strategy = "auto"
 
     def set_use_synspace(self, use_synspace: bool):
         self.use_synspace = use_synspace
+        self.optimization_strategy = "synspace" if use_synspace else "auto"
         print(f"OptimizationUtils: set use_synspace to {self.use_synspace}")
+
+    def set_optimization_strategy(self, strategy: str):
+        chosen = (strategy or "auto").lower()
+        allowed = {"auto", "synspace", "immediate", "llm"}
+        if chosen not in allowed:
+            raise ValueError(f"Unsupported optimization strategy: {strategy}")
+        self.optimization_strategy = chosen
+        self.use_synspace = chosen == "synspace"
+        print(f"OptimizationUtils: set optimization strategy to {self.optimization_strategy}")
 
     def generate_siblings_llm(self, smiles: str):
         print(f"Generating siblings for {smiles} using LLM...")
@@ -86,9 +99,32 @@ Format: ["SMILES1", "SMILES2", ...]
     
     @staticmethod
     def generate_siblings_SMILES(smiles:str):
-        mols, sibling_props = synspace.chemical_space(smiles, num_samples = 150)
-        sibling_smiles = [Chem.MolToSmiles(item) for item in mols]
-        return sibling_smiles
+        result = explore_synspace(smiles, max_variants=150)
+        return result.candidates
+
+    def generate_siblings_immediate(self, smiles: str, max_variants: int = 120):
+        result = explore_immediate_chemical_space(smiles, max_variants=max_variants)
+        return result.candidates
+
+    def generate_siblings(self, smiles: str):
+        strategy_order = {
+            "synspace": ["synspace"],
+            "immediate": ["immediate"],
+            "llm": ["llm"],
+            "auto": ["immediate", "synspace", "llm"],
+        }[self.optimization_strategy]
+
+        for strategy in strategy_order:
+            if strategy == "synspace":
+                siblings = OptimizationUtils.generate_siblings_SMILES(smiles)
+            elif strategy == "immediate":
+                siblings = self.generate_siblings_immediate(smiles)
+            else:
+                siblings = self.generate_siblings_llm(smiles)
+            if siblings:
+                return siblings, strategy
+
+        return [], self.optimization_strategy
     
     @staticmethod
     def filter_sibling_inhibition(prediction_df:pd.DataFrame,
@@ -136,7 +172,8 @@ Format: ["SMILES1", "SMILES2", ...]
     
     @staticmethod
     def combined_results_from_filters(inhibition_df:pd.DataFrame,
-                                    admet_df:pd.DataFrame,):
+                                    admet_df:pd.DataFrame,
+                                    seed_smiles: str | None = None,):
         
         '''
         Function to combine inhibition and ADMET results and rank the siblings
@@ -164,6 +201,14 @@ Format: ["SMILES1", "SMILES2", ...]
         combined_df['admet_score'] = combined_df['absorption_admet_score'] + combined_df['distribution_admet_score'] + combined_df['metabolism_admet_score'] \
                                     + combined_df['excretion_admet_score'] + combined_df['toxicity_admet_score']
         combined_df['rank_admet'] = combined_df['admet_score'].rank(ascending=False)
+        if seed_smiles is not None:
+            combined_df['seed_similarity'] = combined_df['SMILES'].apply(
+                lambda smi: tanimoto_similarity(seed_smiles, smi)
+            )
+            combined_df['novelty_bonus'] = 1.0 - combined_df['seed_similarity']
+        else:
+            combined_df['seed_similarity'] = np.nan
+            combined_df['novelty_bonus'] = 0.0
 
         ranks = ['rank_inhibition','rank_admet']
 
@@ -199,10 +244,7 @@ Format: ["SMILES1", "SMILES2", ...]
             result = f"\n## Optimization Results for Molecule {mol_idx + 1}: {smiles}\n\n"
             
             # 1. Generate and QC siblings
-            if self.use_synspace:
-                siblings = OptimizationUtils.generate_siblings_SMILES(smiles)
-            else:
-                siblings = self.generate_siblings_llm(smiles)
+            siblings, sibling_source = self.generate_siblings(smiles)
             
             if siblings is None or not siblings:
                 result += "Error: No siblings generated\n"
@@ -284,7 +326,11 @@ Format: ["SMILES1", "SMILES2", ...]
                 })
 
             # 6. Combine inhibition & ADMET scores and rank
-            combined_df = OptimizationUtils.combined_results_from_filters(inh_filtered, admet_df) 
+            combined_df = OptimizationUtils.combined_results_from_filters(
+                inh_filtered,
+                admet_df,
+                seed_smiles=smiles,
+            )
             if combined_df.empty:
                 result += "Error: No candidates after combining inhibition and ADMET results.\n"
                 all_results.append(result)
@@ -295,13 +341,15 @@ Format: ["SMILES1", "SMILES2", ...]
 
             # 7.5. Add cytotoxicity ranking (lower avg_cytotox is better)
             combined_df['rank_cytotox'] = combined_df['avg_cytotox'].rank(ascending=True)
+            combined_df['rank_novelty'] = combined_df['novelty_bonus'].rank(ascending=False, method='min')
 
             # 8. Take top 40 after new ranking
-            # Recompute overall_rank with cytotox
+            # Recompute overall_rank with cytotox and a small exploration bonus.
             combined_df['overall_rank'] = 0
             for category in ['rank_inhibition', 'rank_admet', 'rank_cytotox']:
                 if category in rank_weights:
                     combined_df['overall_rank'] += rank_weights[category] * combined_df[category]
+            combined_df['overall_rank'] += 0.5 * combined_df['rank_novelty']
             combined_df['overall_rank'] = combined_df['overall_rank'].rank()
             combined_df = combined_df.sort_values(by=['overall_rank'], ascending=True)
 
@@ -339,9 +387,10 @@ Format: ["SMILES1", "SMILES2", ...]
 
             # 11. Build the markdown table with cytotoxicity
             lines = []
+            lines.append(f"Sibling generation strategy used: {sibling_source}")
             
-            lines.append("| SMILES | Tasks Passed | Tasks Failed | Inhibition | Uncertainty | Hepatocyte Tox | Muscle Tox | Lung Tox |")
-            lines.append("|--------|--------------|--------------|------------|-------------|----------------|------------|----------|")
+            lines.append("| SMILES | Tasks Passed | Tasks Failed | Inhibition | Uncertainty | Similarity | Hepatocyte Tox | Muscle Tox | Lung Tox |")
+            lines.append("|--------|--------------|--------------|------------|-------------|------------|----------------|------------|----------|")
             
             # Add original molecule row
             orig_preds, orig_unc = self.inhibition_utils.get_chemprop_prediction(smiles=[smiles])
@@ -380,7 +429,7 @@ Format: ["SMILES1", "SMILES2", ...]
                 passed_str = "; ".join(passed) if passed else "None"
                 failed_str = "; ".join(failed) if failed else "None"
             
-            lines.append(f"| Original ({smiles}) | {passed_str} | {failed_str} | {orig_preds[0]:.3f} | {orig_unc[0]:.3f} | {orig_hep_tox} | {orig_muscle_tox} | {orig_lung_tox} |")
+            lines.append(f"| Original ({smiles}) | {passed_str} | {failed_str} | {orig_preds[0]:.3f} | {orig_unc[0]:.3f} | 1.000 | {orig_hep_tox} | {orig_muscle_tox} | {orig_lung_tox} |")
 
             # Add candidate molecules
             for _, row in top_candidates.iterrows():
@@ -411,13 +460,15 @@ Format: ["SMILES1", "SMILES2", ...]
                 inh_row = inh_df[inh_df['SMILES'] == smi].iloc[0]
                 inhibition = inh_row['inhibition']
                 uncertainty = inh_row['inhibition_dirichlet_uncal_uncertainty']
+                similarity = row['seed_similarity'] if 'seed_similarity' in row else np.nan
 
                 # Get cytotoxicity values
                 hep_tox = f"{row['hepatocyte_tox']:.3f}" if not pd.isna(row['hepatocyte_tox']) else "N/A"
                 muscle_tox = f"{row['muscle_tox']:.3f}" if not pd.isna(row['muscle_tox']) else "N/A"
                 lung_tox = f"{row['lung_tox']:.3f}" if not pd.isna(row['lung_tox']) else "N/A"
 
-                lines.append(f"| {smi} | {passed_str} | {failed_str} | {inhibition:.3f} | {uncertainty:.3f} | {hep_tox} | {muscle_tox} | {lung_tox} |")
+                sim_display = f"{similarity:.3f}" if not pd.isna(similarity) else "N/A"
+                lines.append(f"| {smi} | {passed_str} | {failed_str} | {inhibition:.3f} | {uncertainty:.3f} | {sim_display} | {hep_tox} | {muscle_tox} | {lung_tox} |")
 
             result += "\n".join(lines)
             all_results.append(result)
@@ -487,6 +538,9 @@ Format: ["SMILES1", "SMILES2", ...]
     def get_rdkit_documentation(self, description_of_task: str):
         """
         """
+        from langchain_community.embeddings import OpenAIEmbeddings
+        from langchain_community.vectorstores import Chroma
+
         persist_dir = "../rdkit_docs/rdkit_db"  # Must match the one you used when saving
         embeddings = OpenAIEmbeddings(openai_api_key=self.config['openai_api_key'])  # Or whatever you used for creation
 
