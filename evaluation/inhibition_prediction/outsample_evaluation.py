@@ -2,10 +2,10 @@ import pandas as pd
 import numpy as np
 from sklearn.metrics import confusion_matrix, recall_score, precision_score, roc_auc_score, accuracy_score, precision_recall_curve, auc
 
-outsample_prediction_dir = '/home/aw274/Mtb_Inhibition_DL_Pipeline/evaluation/inhibition_prediction/new_outsample_prediction.csv'
+outsample_prediction_dir = 'evaluation/inhibition_prediction/output/new_outsample_prediction.csv'
 outsample_prediction = pd.read_csv(outsample_prediction_dir)
 
-outsample_label = pd.read_csv('/n/data1/hms/dbmi/farhat/alex/validation_dataset/outsample_data.csv')
+outsample_label = pd.read_csv('data/validation_dataset/outsample_data.csv')
 
 inhibition_threshold = 0.7
 confidence_threshold = 0.55

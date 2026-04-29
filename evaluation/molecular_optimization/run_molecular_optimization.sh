@@ -38,8 +38,8 @@ target_screening_dataset=$output_folder_dir"sibling_molecules.csv"
 
 ## Inhibition Model Variables
 # Model Checkpoints
-inhibition_model_checkpoint_1='/home/aw274/Mtb_Inhibition_DL_Pipeline/model_checkpoints/classifier_checkpoints/CompoundFragment_evidential_classification_0.2_output' ## 2 Batches + Fragment
-inhibition_model_checkpoint_2='/home/aw274/Mtb_Inhibition_DL_Pipeline/model_checkpoints/classifier_checkpoints/CompoundFragment_inclusive_with_antibiotics_evidential_classification_0.2_output' ## 3 Batches + Fragment + Antibiotics
+inhibition_model_checkpoint_1='data/model_checkpoints/classifier_checkpoints/CompoundFragment_evidential_classification_0.2_output' ## 2 Batches + Fragment
+inhibition_model_checkpoint_2='data/model_checkpoints/classifier_checkpoints/CompoundFragment_inclusive_with_antibiotics_evidential_classification_0.2_output' ## 3 Batches + Fragment + Antibiotics
 # Output Directories
 inhibition_screening_output_dir_1=$output_folder_dir"raw_inhibition_prediction_1.csv"
 inhibition_screening_output_dir_2=$output_folder_dir"raw_inhibition_prediction_2.csv"
@@ -55,7 +55,7 @@ confidence_threshold=0.55
 admet_EGNN_model_checkpoints=""
 admet_output_dir=$output_folder_dir"raw_admet_prediction.csv"
 admet_filtering_output_dir=$output_folder_dir"filtered_admet_prediction.csv"
-antibiotic_admet_prediction_dir='/home/aw274/Mtb_Inhibition_DL_Pipeline/admet_model/current_antibiotic_admet_predictions.csv'
+antibiotic_admet_prediction_dir='data/admet_model/current_antibiotic_admet_predictions.csv'
 ranking_admet_out_dir=$output_folder_dir"ranking_admet_prediction.csv"
 
 ## Agent Model Variables
@@ -70,7 +70,7 @@ final_output_dir=$output_folder_dir"final_output.csv"
 ## Diffusion Model
 
 ## Molecular Optimization
-cd /home/aw274/Mtb_Inhibition_DL_Pipeline/molecule_optimization
+cd data/molecule_optimization
 source activate synspace
 
 if $run_generate_siblings; then
@@ -80,7 +80,7 @@ if $run_generate_siblings; then
 fi
 
 ## M.tb Inhibition Classifier
-cd /home/aw274/Mtb_Inhibition_DL_Pipeline/inhibition_model
+cd data/inhibition_model
 source activate chemprop
     
 if $run_inhibition_prediction; then
@@ -114,7 +114,7 @@ if $run_inhibition_filtering; then
 fi
 
 ## Toxicity Classifier
-cd /home/aw274/Mtb_Inhibition_DL_Pipeline/admet_model
+cd data/admet_model
 source activate admet_ai
 
 if $run_admet_prediction; then
@@ -129,7 +129,7 @@ if $run_admet_filtering; then
                            --ranking_admet_out_dir $ranking_admet_out_dir
 fi
 
-cd /home/aw274/Mtb_Inhibition_DL_Pipeline/agent
+cd data/agent
 source activate langchain_env
 
 if $run_agent_ranking; then
@@ -139,7 +139,7 @@ if $run_agent_ranking; then
                     --num_agent $num_agent
 fi
 
-cd /home/aw274/Mtb_Inhibition_DL_Pipeline/run
+cd data/run
 source activate chemprop
 
 if $run_final_output; then
@@ -149,7 +149,7 @@ if $run_final_output; then
                            --final_output_dir $final_output_dir 
 fi
 
-cd /home/aw274/Mtb_Inhibition_DL_Pipeline/molecule_optimization
+cd data/molecule_optimization
 source activate synspace
 
 if $run_get_best_sibling; then

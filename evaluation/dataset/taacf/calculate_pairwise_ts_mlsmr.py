@@ -4,8 +4,8 @@ from rdkit import Chem
 from rdkit.Chem import AllChem
 from rdkit.DataStructs import BulkTanimotoSimilarity
 from tqdm import tqdm
-mlsmr1 = pd.read_csv('/n/data1/hms/dbmi/farhat/anz226/FlemingDev/model_training/Pubchem_TB_Data/AID_1332_datatable.csv', header=3)
-mlsmr2 = pd.read_csv('/n/data1/hms/dbmi/farhat/anz226/FlemingDev/model_training/Pubchem_TB_Data/AID_1626_datatable.csv', header=3)
+mlsmr1 = pd.read_csv('data/FlemingDev/model_training/Pubchem_TB_Data/AID_1332_datatable.csv', header=3)
+mlsmr2 = pd.read_csv('data/FlemingDev/model_training/Pubchem_TB_Data/AID_1626_datatable.csv', header=3)
 mlsmr_total = pd.concat([mlsmr1, mlsmr2], ignore_index=True)
 mlsmr_total = pd.concat([mlsmr1, mlsmr2])
 mlsmr_total = mlsmr_total[['Unnamed: 3', 'Unnamed: 4']]
@@ -15,11 +15,11 @@ mlsmr_total['inhibition'] = mlsmr_total['inhibition'].apply(lambda x: 1 if x == 
 mlsmr_total
 
 
-our_data =pd.read_csv('/n/data1/hms/dbmi/farhat/alex/inhibition_training_data/Binary_Inhibition_114850_mols_inclusive.csv')
+our_data =pd.read_csv('data/inhibition_training_data/Binary_Inhibition_114850_mols_inclusive.csv')
 
 
-taacf = pd.read_csv('/n/data1/hms/dbmi/farhat/anz226/FlemingDev/model_training/Pubchem_TB_Data/AID_1949_datatable.csv', header=3)
-taacf2 = pd.read_csv('/n/data1/hms/dbmi/farhat/anz226/FlemingDev/model_training/Pubchem_TB_Data/AID_2842_datatable.csv', header=3)
+taacf = pd.read_csv('data/FlemingDev/model_training/Pubchem_TB_Data/AID_1949_datatable.csv', header=3)
+taacf2 = pd.read_csv('data/FlemingDev/model_training/Pubchem_TB_Data/AID_2842_datatable.csv', header=3)
 taacf = pd.concat([taacf, taacf2])
 taacf = taacf[['Unnamed: 3', 'Unnamed: 4']]
 taacf.columns = ['SMILES', 'inhibition']
@@ -31,16 +31,16 @@ from sklearn.model_selection import train_test_split
 
 
 # Load pre-split train/test datasets
-train_our = pd.read_csv('/n/data1/hms/dbmi/farhat/anz226/FlemingDev/data/data_original_from_alex/train_data.csv')
-test_our = pd.read_csv('/n/data1/hms/dbmi/farhat/anz226/FlemingDev/data/data_original_from_alex/test_data.csv')
-val_our = pd.read_csv('/n/data1/hms/dbmi/farhat/anz226/FlemingDev/data/data_original_from_alex/val_data.csv')
-train_mlsmr = pd.read_csv('/n/data1/hms/dbmi/farhat/anz226/FlemingDev/experiments/compare_datasets/mlsmr_train.csv')
-test_mlsmr = pd.read_csv('/n/data1/hms/dbmi/farhat/anz226/FlemingDev/experiments/compare_datasets/mlsmr_test.csv')
-val_mlsmr = pd.read_csv('/n/data1/hms/dbmi/farhat/anz226/FlemingDev/experiments/compare_datasets/mlsmr_val.csv')
-train_taacf = pd.read_csv('/n/data1/hms/dbmi/farhat/anz226/FlemingDev/experiments/compare_datasets/taacf_train.csv')
-val_taacf = pd.read_csv('/n/data1/hms/dbmi/farhat/anz226/FlemingDev/experiments/compare_datasets/taacf_val.csv')
+train_our = pd.read_csv('data/FlemingDev/data/data_original_from_alex/train_data.csv')
+test_our = pd.read_csv('data/FlemingDev/data/data_original_from_alex/test_data.csv')
+val_our = pd.read_csv('data/FlemingDev/data/data_original_from_alex/val_data.csv')
+train_mlsmr = pd.read_csv('data/FlemingDev/experiments/compare_datasets/mlsmr_train.csv')
+test_mlsmr = pd.read_csv('data/FlemingDev/experiments/compare_datasets/mlsmr_test.csv')
+val_mlsmr = pd.read_csv('data/FlemingDev/experiments/compare_datasets/mlsmr_val.csv')
+train_taacf = pd.read_csv('data/FlemingDev/experiments/compare_datasets/taacf_train.csv')
+val_taacf = pd.read_csv('data/FlemingDev/experiments/compare_datasets/taacf_val.csv')
 # If taacf_test is needed, add its path and loading here
-test_taacf = pd.read_csv('/n/data1/hms/dbmi/farhat/anz226/FlemingDev/experiments/compare_datasets/taacf_test.csv')
+test_taacf = pd.read_csv('data/FlemingDev/experiments/compare_datasets/taacf_test.csv')
 
 # Remove NaNsmiles
 print('removing nans')
@@ -124,7 +124,7 @@ def main():
         })
 
     results_df = pd.DataFrame(results)
-    output_filename = f'/n/data1/hms/dbmi/farhat/anz226/FlemingDev/experiments/compare_datasets/results/pairwise_similarity_our_data_vs_{dataset_name}.csv'
+    output_filename = f'data/FlemingDev/experiments/compare_datasets/results/pairwise_similarity_our_data_vs_{dataset_name}.csv'
     results_df.to_csv(output_filename, index=False)
     print(f"Results saved to {output_filename}")
 

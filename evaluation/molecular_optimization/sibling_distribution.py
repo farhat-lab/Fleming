@@ -154,10 +154,10 @@ def compare_Pharmacokinetics_distribution (before: str,
 
 if __name__ == '__main__':
 
-    compare_Pharmacokinetics_distribution(before = "/n/data1/hms/dbmi/farhat/alex/Mtb_Inhibition_DL_Pipeline/output/generative/molecular_optimization_result_v2/top_generated_molecules.csv",
-                                          # before = "/home/aw274/Mtb_Inhibition_DL_Pipeline/output/dragonfold/leadlike/top_100_output.csv",
-                                          after = "/n/data1/hms/dbmi/farhat/alex/Mtb_Inhibition_DL_Pipeline/output/generative/molecular_optimization_result_v2/step_5/best_siblings.csv",
-                                          # after = "/home/aw274/Mtb_Inhibition_DL_Pipeline/output/dragonfold/leadlike/molecular_optimization_result/best_siblings.csv",
-                                          output_dir = "/n/data1/hms/dbmi/farhat/alex/Mtb_Inhibition_DL_Pipeline/evaluation/molecular_optimization/",
-                                          # output_dir = "/home/aw274/Mtb_Inhibition_DL_Pipeline/output/dragonfold/leadlike/molecular_optimization_result/"
+    compare_Pharmacokinetics_distribution(before = "data/output/generative/molecular_optimization_result_v2/top_generated_molecules.csv",
+                                          # before = "data/output/dragonfold/leadlike/top_100_output.csv",
+                                          after = "data/output/generative/molecular_optimization_result_v2/step_5/best_siblings.csv",
+                                          # after = "data/output/dragonfold/leadlike/molecular_optimization_result/best_siblings.csv",
+                                          output_dir = "evaluation/molecular_optimization/output/",
+                                          # output_dir = "data/output/dragonfold/leadlike/molecular_optimization_result/"
                                          )

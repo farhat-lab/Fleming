@@ -17,7 +17,7 @@ def get_morgan_fp(smiles):
 
 for step in range(1,6):
     
-    siblings = pd.read_csv(f"/n/data1/hms/dbmi/farhat/alex/Mtb_Inhibition_DL_Pipeline/output/generative/molecular_optimization_result_v2/step_{step}/sibling_dict.csv")
+    siblings = pd.read_csv(f"data/output/generative/molecular_optimization_result_v2/step_{step}/sibling_dict.csv")
     siblings = siblings[['SMILES','seed']]
     if step == 1:
         siblings.rename(columns={'SMILES':f'siblings_step_{step}',

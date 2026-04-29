@@ -3,7 +3,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 import seaborn as sns
 
-sim_df = pd.read_csv('/n/data1/hms/dbmi/farhat/anz226/FlemingDev/experiments/compare_datasets/all_datasets_tanimoto_similarity2.csv')
+sim_df = pd.read_csv('data/FlemingDev/experiments/compare_datasets/all_datasets_tanimoto_similarity2.csv')
 sim_df = sim_df[sim_df['max_tanimoto'] < 1.0]  # Exclude self-similarity
 
 MLSMR_df = sim_df[sim_df['dataset'] == 'MLSMR'].copy()
@@ -74,10 +74,10 @@ for text in legend.get_texts():
 # plt.gca().spines['bottom'].set_linewidth(3)
 
 # Save figure
-plt.savefig('/n/data1/hms/dbmi/farhat/alex/Mtb_Inhibition_DL_Pipeline/evaluation/dataset/taacf/overall_similarity_distributions.png', 
+plt.savefig('evaluation/dataset/taacf/overall_similarity_distributions.png', 
             dpi=300,
             bbox_inches='tight')
-plt.savefig('/n/data1/hms/dbmi/farhat/alex/Mtb_Inhibition_DL_Pipeline/evaluation/dataset/taacf/overall_similarity_distributions.pdf',
+plt.savefig('evaluation/dataset/taacf/overall_similarity_distributions.pdf',
             bbox_inches='tight')
 plt.close()
 
@@ -126,10 +126,10 @@ for text in legend.get_texts():
 # plt.gca().spines['bottom'].set_linewidth(2)
 
 # Save figure
-plt.savefig('/n/data1/hms/dbmi/farhat/alex/Mtb_Inhibition_DL_Pipeline/evaluation/dataset/taacf/hit_similarity_distributions.png', 
+plt.savefig('evaluation/dataset/taacf/hit_similarity_distributions.png', 
             dpi=300,
             bbox_inches='tight')
-plt.savefig('/n/data1/hms/dbmi/farhat/alex/Mtb_Inhibition_DL_Pipeline/evaluation/dataset/taacf/hit_similarity_distributions.pdf',
+plt.savefig('evaluation/dataset/taacf/hit_similarity_distributions.pdf',
             bbox_inches='tight')
 plt.close()
 
