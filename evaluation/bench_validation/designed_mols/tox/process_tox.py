@@ -60,5 +60,5 @@ def get_failed_tests(row):
     return failed_tests
 final_df['failed_tests'] = final_df.apply(get_failed_tests, axis=1)
 
-final_df.to_csv('evaluation/bench_validation/designed_mols/tox/verified_six_tox_admet_summary.csv',
+final_df.to_csv('evaluation/bench_validation/designed_mols/tox/output/verified_six_tox_admet_summary.csv',
                 index=False)

@@ -1,12 +1,12 @@
 import pandas as pd
 
-mmv_df = pd.read_csv('evaluation/mmv/MMV HGL4 Library with SMILES.txt', sep='\t')
-# mmv_df[['SMILES']].to_csv('evaluation/mmv/mmv_smiles.csv', index=False)
+mmv_df = pd.read_csv('evaluation/dataset/mmv/MMV HGL4 Library with SMILES.txt', sep='\t')
+# mmv_df[['SMILES']].to_csv('evaluation/dataset/mmv/output/mmv_smiles.csv', index=False)
 print(len(mmv_df))
 
 train_df = pd.read_csv('data/inhibition_training_data/tb_inhibition_A&M/final_data/CompoundFragment_Inhibition_114933_mols_inclusive_with_antibiotics.csv')
 
-hits_df = pd.read_excel('evaluation/mmv/Whole Cell Actives from MMV HGL4 Library.xlsx',
+hits_df = pd.read_excel('evaluation/dataset/mmv/Whole Cell Actives from MMV HGL4 Library.xlsx',
                         sheet_name='Data')
 hits_df['hit'] = 1
 
@@ -19,14 +19,14 @@ complete_data = complete_data[~complete_data['SMILES'].isin(train_df['SMILES'])]
 
 complete_data['hit'] = complete_data['hit'].fillna(0)
 
-pred_df = pd.read_csv('evaluation/mmv/mmv_inhibition_prediction.csv')
-# pred_df = pd.read_csv('evaluation/mmv/mmv_inhibition_prediction_old_models.csv')
+pred_df = pd.read_csv('evaluation/dataset/mmv/mmv_inhibition_prediction.csv')
+# pred_df = pd.read_csv('evaluation/dataset/mmv/mmv_inhibition_prediction_old_models.csv')
 
 complete_data = complete_data.merge(pred_df,
                                     on='SMILES',
                                     how = 'left')
 
-complete_data.to_csv('evaluation/mmv/mmv_complete_data_with_predictions.csv',
+complete_data.to_csv('evaluation/dataset/mmv/output/mmv_complete_data_with_predictions.csv',
                      index=False)
 
 # Calculate AUROC
@@ -63,8 +63,8 @@ print(ctp)
 print(cfp)
 print(f"Threshold 0.7 and uncertainty 0.4: {ctpr}")
 
-complete_data[complete_data['confident_predicted_hit'] == 1][['SMILES','LGCY Batch Name','Mtb_WCA_mc2-7000_Resazurin: % inhibition or activation ','inhibition','inhibition_dirichlet_uncal_uncertainty']].to_csv('evaluation/mmv/mmv_predicted_hits_confident.csv',
+complete_data[complete_data['confident_predicted_hit'] == 1][['SMILES','LGCY Batch Name','Mtb_WCA_mc2-7000_Resazurin: % inhibition or activation ','inhibition','inhibition_dirichlet_uncal_uncertainty']].to_csv('evaluation/dataset/mmv/output/mmv_predicted_hits_confident.csv',
                                                                                                                                                                                                                  index=False)
 
-complete_data[complete_data['hit'] == 1][['SMILES','LGCY Batch Name','Mtb_WCA_mc2-7000_Resazurin: % inhibition or activation ','inhibition','inhibition_dirichlet_uncal_uncertainty']].to_csv('evaluation/mmv/mmv_hits_predictions.csv',
+complete_data[complete_data['hit'] == 1][['SMILES','LGCY Batch Name','Mtb_WCA_mc2-7000_Resazurin: % inhibition or activation ','inhibition','inhibition_dirichlet_uncal_uncertainty']].to_csv('evaluation/dataset/mmv/output/mmv_hits_predictions.csv',
                                                                                                                                                 index=False)

@@ -54,7 +54,7 @@ for fp in tqdm(gen_fp):
 generated_molecules['metabolites_max_sim'] = met_maximum_sim
 generated_molecules['most_similar_metabolites'] = met_maximum_sim_mol
 
-generated_molecules.to_csv('bioactive_metabolite_similarity.csv',
+generated_molecules.to_csv('evaluation/bench_validation/designed_mols/output/bioactive_metabolite_similarity.csv',
                            index = False)
     
 

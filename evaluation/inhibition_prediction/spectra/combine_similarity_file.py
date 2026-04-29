@@ -15,6 +15,6 @@ full_data = np.concatenate([pre_calculated_similarity_0,
                 pre_calculated_similarity_4,
                 pre_calculated_similarity_5])
 
-np.save('data/inhibition_training_data/tb_inhibition_A&M/pairwise_similarity_114933.npy', full_data)
+np.save('evaluation/inhibition_prediction/spectra/output/pairwise_similarity_114933.npy', full_data)
 
 

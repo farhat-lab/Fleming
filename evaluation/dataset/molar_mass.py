@@ -44,7 +44,7 @@ def calculate_molar_mass(smiles):
 dataset['molar_mass'] = dataset['SMILES'].apply(calculate_molar_mass)
 
 # Display result
-dataset.to_csv('evaluation/dataset/training_dataset_molar_mass_labeled.csv', index=False)
+dataset.to_csv('evaluation/dataset/output/training_dataset_molar_mass_labeled.csv', index=False)
 
 def iqr(x):
     return x.quantile(0.75) - x.quantile(0.25)
@@ -61,5 +61,5 @@ summary = dataset.groupby('label')['molar_mass'].agg(
     iqr=lambda x: x.quantile(0.75) - x.quantile(0.25)
 ).reset_index()
 
-summary.to_csv('evaluation/dataset/molar_mass_summary.csv', index=False)
+summary.to_csv('evaluation/dataset/output/molar_mass_summary.csv', index=False)
 print(summary)

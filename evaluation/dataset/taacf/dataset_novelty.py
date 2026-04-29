@@ -74,10 +74,10 @@ for text in legend.get_texts():
 # plt.gca().spines['bottom'].set_linewidth(3)
 
 # Save figure
-plt.savefig('evaluation/dataset/taacf/overall_similarity_distributions.png', 
+plt.savefig('evaluation/dataset/taacf/output/overall_similarity_distributions.png',
             dpi=300,
             bbox_inches='tight')
-plt.savefig('evaluation/dataset/taacf/overall_similarity_distributions.pdf',
+plt.savefig('evaluation/dataset/taacf/output/overall_similarity_distributions.pdf',
             bbox_inches='tight')
 plt.close()
 
@@ -126,10 +126,10 @@ for text in legend.get_texts():
 # plt.gca().spines['bottom'].set_linewidth(2)
 
 # Save figure
-plt.savefig('evaluation/dataset/taacf/hit_similarity_distributions.png', 
+plt.savefig('evaluation/dataset/taacf/output/hit_similarity_distributions.png',
             dpi=300,
             bbox_inches='tight')
-plt.savefig('evaluation/dataset/taacf/hit_similarity_distributions.pdf',
+plt.savefig('evaluation/dataset/taacf/output/hit_similarity_distributions.pdf',
             bbox_inches='tight')
 plt.close()
 

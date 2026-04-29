@@ -11,13 +11,11 @@ import os
 from sklearn.neighbors import LocalOutlierFactor
 import plotly.express as px
 
-save_dir = 'data/molecular_optimization/'
-
-##### Screening Data ##### 
+##### Screening Data #####
 ## Dragonfold Lead-Like
 dragonfold_leadlike_df = pd.read_csv("data/screen_dataset/processed/dragonfold/leadlike_49608_mols.csv")
 dragonfold_leadlike_df['group'] = "dragonfold_leadlike"
-dragonfold_leadlike_save_sir = 'data/chemical_space/' + 'dragonfold_leadlike_morgan.csv'
+dragonfold_leadlike_save_sir = 'evaluation/molecular_optimization/output/dragonfold_leadlike_morgan.csv'
 
 if os.path.exists(dragonfold_leadlike_save_sir):
     dragonfold_leadlike_df= pd.read_csv(dragonfold_leadlike_save_sir)

@@ -66,5 +66,5 @@ for i, fp in enumerate(tqdm(mlsmr_taacf_valid_fps)):
 pd.DataFrame({
     'SMILES': mlsmr_taacf_valid_smiles,
     'Max_Tanimoto_Similarity': mlsmr_taacf_max_similarities
-}).to_csv('evaluation/dataset/taacf/mlsmr_taacf_max_similarities.csv', index=False)
+}).to_csv('evaluation/dataset/taacf/output/mlsmr_taacf_max_similarities.csv', index=False)
 

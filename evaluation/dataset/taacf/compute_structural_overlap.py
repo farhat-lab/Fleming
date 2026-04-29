@@ -81,4 +81,4 @@ for i, fp in enumerate(tqdm(our_data_valid_fps)):
 pd.DataFrame({
     'SMILES': our_data_valid_smiles,
     'Max_Tanimoto_Similarity': inter_dataset_max_similarities
-}).to_csv('evaluation/dataset/taacf/inter_dataset_max_similarities.csv', index=False)
+}).to_csv('evaluation/dataset/taacf/output/inter_dataset_max_similarities.csv', index=False)

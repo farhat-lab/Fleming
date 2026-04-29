@@ -11,7 +11,7 @@ from descriptastorus.descriptors import rdDescriptors, rdNormalizedDescriptors
 import os
 
 
-save_dir = 'data/chemical_space/'
+save_dir = 'evaluation/dataset/data_distribution/output/'
 
 ##### Train Data Plot #####
 

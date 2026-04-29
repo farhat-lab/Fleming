@@ -62,13 +62,13 @@ for text in legend.get_texts():
 # plt.gca().spines['bottom'].set_linewidth(3)
 
 # Save figure
-plt.savefig('evaluation/dataset/taacf/pooled_mlsmr_taacf_similarity_distributions.png', 
+plt.savefig('evaluation/dataset/taacf/output/pooled_mlsmr_taacf_similarity_distributions.png',
             dpi=300,
             bbox_inches='tight')
 plt.close()
 
 
-inter_dataset_max_sim = pd.read_csv('evaluation/dataset/taacf/inter_dataset_max_similarities.csv')
+inter_dataset_max_sim = pd.read_csv('evaluation/dataset/taacf/output/inter_dataset_max_similarities.csv')
 print("############ Inter-Dataset Structural Overlap Between Our dataset and Pooled mlsmr-taacf ############")
 print(f'Number of molecules in Our dataset: {len(inter_dataset_max_sim)}')
 print(f"Number of overlapping molecules (Tanimoto similarity = 1.0) between Our dataset and pooled mlsmr-taacf: {(inter_dataset_max_sim['Max_Tanimoto_Similarity'] == 1.0).sum()}")
@@ -127,7 +127,7 @@ for text in legend.get_texts():
 # plt.gca().spines['bottom'].set_linewidth(3)
 
 # Save figure
-plt.savefig('evaluation/dataset/taacf/interdatset_similarity_distributions.png', 
+plt.savefig('evaluation/dataset/taacf/output/interdatset_similarity_distributions.png',
             dpi=300,
             bbox_inches='tight')
 plt.close()

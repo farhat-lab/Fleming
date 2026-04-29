@@ -124,7 +124,7 @@ def main():
         })
 
     results_df = pd.DataFrame(results)
-    output_filename = f'data/FlemingDev/experiments/compare_datasets/results/pairwise_similarity_our_data_vs_{dataset_name}.csv'
+    output_filename = f'evaluation/dataset/taacf/output/pairwise_similarity_our_data_vs_{dataset_name}.csv'
     results_df.to_csv(output_filename, index=False)
     print(f"Results saved to {output_filename}")
 

@@ -35,4 +35,4 @@ for ax in axes:
     ax.spines['top'].set_visible(False)
 
 plt.tight_layout()
-plt.savefig('evaluation/bench_validation/designed_mols/physiochemical_properties.png')
+plt.savefig('evaluation/bench_validation/designed_mols/output/physiochemical_properties.png')

@@ -29,8 +29,8 @@ def compute_max_tanimoto(generated_fps, train_fps):
 
 synthemol_max_sim = compute_max_tanimoto(synthemol_fps, train_fps)
 synthemol_df['max_sim'] = synthemol_max_sim
-synthemol_df.to_csv('data/output/generative/synthemol_generated/with_sim.csv',index=False)
+synthemol_df.to_csv('evaluation/molecule_generation/output/synthemol_with_sim.csv',index=False)
 
 diffusion_max_sim = compute_max_tanimoto(diffusion_fps, train_fps)
 diffusion_df['max_sim'] = diffusion_max_sim
-diffusion_df.to_csv('data/output/generative/diffusion_generated/with_sim.csv', index=False)
+diffusion_df.to_csv('evaluation/molecule_generation/output/diffusion_with_sim.csv', index=False)

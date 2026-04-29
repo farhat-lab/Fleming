@@ -69,7 +69,7 @@ ax.spines[['right', 'top']].set_visible(False)
 # ax.text(0.5, y_max, f'p = {pvalue:.2e}',
 #         ha='center', va='bottom', fontsize=24, fontweight='bold')
 
-plt.savefig('evaluation/bench_validation/designed_mols/maximum_similarity_new_antibiotics_boxplot.png',
+plt.savefig('evaluation/bench_validation/designed_mols/output/maximum_similarity_new_antibiotics_boxplot.png',
             bbox_inches='tight', dpi=300)
-plt.savefig('evaluation/bench_validation/designed_mols/maximum_similarity_new_antibiotics_boxplot.pdf',
+plt.savefig('evaluation/bench_validation/designed_mols/output/maximum_similarity_new_antibiotics_boxplot.pdf',
             bbox_inches='tight')

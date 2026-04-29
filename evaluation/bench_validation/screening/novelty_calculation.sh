@@ -6,4 +6,4 @@
 #SBATCH -o run_logs/hostname_%j.out
 #SBATCH -e run_logs/hostname_%j.err
 
-python evaluation/bench_validation/screening/output/novelty_calculation.py
+python evaluation/bench_validation/screening/novelty_calculation.py

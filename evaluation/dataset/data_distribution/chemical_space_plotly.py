@@ -8,7 +8,7 @@ import os
 import plotly.express as px
 
 
-save_dir = 'data/chemical_space/'
+save_dir = 'evaluation/dataset/data_distribution/output/'
 
 ##### Train Data Plot #####
 

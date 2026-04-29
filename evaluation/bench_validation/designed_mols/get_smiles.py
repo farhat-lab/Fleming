@@ -113,6 +113,6 @@ for compound in tqdm(metabolites):
         selected_compound_df = pd.DataFrame()
         selected_compound_df['compound_id'] = selected_compounds
         selected_compound_df['smiles'] = selected_smiles
-        selected_compound_df.to_csv('metabolites.csv',
-                                    index = False)    
+        selected_compound_df.to_csv('evaluation/bench_validation/designed_mols/output/metabolites.csv',
+                                    index = False)
 

@@ -79,8 +79,8 @@ for text in legend.get_texts():
         text.set_fontsize(20)
 
 ax.spines[['right','top']].set_visible(False)
-plt.savefig('evaluation/fleming/fleming_distinguish_roc_curve.png', 
-            dpi=300, 
+plt.savefig('evaluation/fleming/output/fleming_distinguish_roc_curve.png',
+            dpi=300,
             bbox_inches='tight')
-plt.savefig('evaluation/fleming/fleming_distinguish_roc_curve.pdf', 
+plt.savefig('evaluation/fleming/output/fleming_distinguish_roc_curve.pdf',
             bbox_inches='tight')

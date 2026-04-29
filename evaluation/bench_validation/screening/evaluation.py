@@ -90,6 +90,6 @@ ax.spines[['right','top']].set_visible(False)
 # box = ax.get_position()
 # ax.set_position([box.x0, box.y0, box.width * 0.5, box.height])
 ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
-plt.savefig('evaluation/inhibition_prediction/output/bench_validation_AUROC.png',bbox_inches='tight')
+plt.savefig('evaluation/bench_validation/screening/output/bench_validation_AUROC.png',bbox_inches='tight')
 
   

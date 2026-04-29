@@ -86,8 +86,8 @@ for mol_id in name_mapping['Molecule Name']:
         plt.yticks(fontsize=15)
         # plt.legend()
         plt.tight_layout()
-        plt.savefig(f'evaluation/bench_validation/designed_mols/Inhibition_Curves/{mol_id}_inhibition_curve.png')
-        plt.savefig(f'evaluation/bench_validation/designed_mols/Inhibition_Curves/{mol_id}_inhibition_curve.pdf')
+        plt.savefig(f'evaluation/bench_validation/designed_mols/output/Inhibition_Curves/{mol_id}_inhibition_curve.png')
+        plt.savefig(f'evaluation/bench_validation/designed_mols/output/Inhibition_Curves/{mol_id}_inhibition_curve.pdf')
 
     except RuntimeError as e:
         print(f"Fit failed for {mol_id}: {e}")

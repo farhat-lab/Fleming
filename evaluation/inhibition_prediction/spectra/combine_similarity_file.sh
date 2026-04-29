@@ -6,4 +6,4 @@
 #SBATCH -o run_logs/hostname_%j.out
 #SBATCH -e run_logs/hostname_%j.err
 
-python evaluation/inhibition_prediction/spectra/output/combine_similarity_file.py
+python evaluation/inhibition_prediction/spectra/combine_similarity_file.py

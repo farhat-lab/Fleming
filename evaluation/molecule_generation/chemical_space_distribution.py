@@ -10,7 +10,7 @@ import seaborn as sns
 import os
 from sklearn.neighbors import LocalOutlierFactor
 
-save_dir = 'data/chemical_space/'
+save_dir = 'evaluation/molecule_generation/output/'
 
 ##### Train Data Plot #####
 

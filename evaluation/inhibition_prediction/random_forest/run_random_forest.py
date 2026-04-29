@@ -29,7 +29,7 @@ except:
     train_df = pd.DataFrame(feature_list,
                             columns = column_names)
 
-    train_df.to_csv('data/inhibition_training_data/tb_inhibition_A&M/final_data/train_df_with_morgan.csv',
+    train_df.to_csv('evaluation/inhibition_prediction/random_forest/output/train_df_with_morgan.csv',
                     index = False)
 
 X = train_df

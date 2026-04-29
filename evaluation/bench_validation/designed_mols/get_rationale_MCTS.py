@@ -491,7 +491,7 @@ if __name__ == "__main__":
     # This finds rationales for molecules based on MCTS. This is adapted from chemprop 
     ### variables
     model_path = "data/model_checkpoints/classifier_checkpoints/CompoundFragment_inclusive_with_antibiotics_evidential_classification_0.2_output/fold_0/model_0/model.pt"
-    save_dir = "evaluation/bench_validation/designed_mols/pipeline_prediction/" 
+    save_dir = "evaluation/bench_validation/designed_mols/output/pipeline_prediction/"
     # smiles = "CCCc1ccc(Oc2ccc(C(=O)N3C4CCC3CC(N(C)C)C4)cc2)cc1" 
 
     ### params for rationale search
