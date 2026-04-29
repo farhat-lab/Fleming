@@ -1,19 +1,19 @@
 import pandas as pd 
 import numpy
 
-seed_data = pd.read_csv('/home/aw274/Mtb_Inhibition_DL_Pipeline/output/dragonfold/leadlike/top_100_output.csv')
+seed_data = pd.read_csv('data/output/dragonfold/leadlike/top_100_output.csv')
 seed_data['group'] = 'Seed Data'
 
-step1_seed_data = pd.read_csv('/home/aw274/Mtb_Inhibition_DL_Pipeline/output/dragonfold/leadlike/molecular_optimization_result/sibling_dict_step1.csv')
+step1_seed_data = pd.read_csv('data/output/dragonfold/leadlike/molecular_optimization_result/sibling_dict_step1.csv')
 step1_seed_data['group'] = 'Step 1 Generated Siblings'
 
-step2_seed_data = pd.read_csv('/home/aw274/Mtb_Inhibition_DL_Pipeline/output/dragonfold/leadlike/molecular_optimization_result/sibling_dict_step2.csv')
+step2_seed_data = pd.read_csv('data/output/dragonfold/leadlike/molecular_optimization_result/sibling_dict_step2.csv')
 step2_seed_data['group'] = 'Step 2 Generated Siblings'
 
-step3_seed_data = pd.read_csv('/home/aw274/Mtb_Inhibition_DL_Pipeline/output/dragonfold/leadlike/molecular_optimization_result/sibling_dict_step3.csv')
+step3_seed_data = pd.read_csv('data/output/dragonfold/leadlike/molecular_optimization_result/sibling_dict_step3.csv')
 step3_seed_data['group'] = 'Step 3 Generated Siblings'
 
-step4_seed_data = pd.read_csv('/home/aw274/Mtb_Inhibition_DL_Pipeline/output/dragonfold/leadlike/molecular_optimization_result/sibling_dict_step4.csv')
+step4_seed_data = pd.read_csv('data/output/dragonfold/leadlike/molecular_optimization_result/sibling_dict_step4.csv')
 step4_seed_data['group'] = 'Step 4 Generated Siblings'
 
 selected_molecule = 'CN(C)Cc1ccc(N(C)CCN(C)CC(=O)Nc2nc3ccc(OCCCN4CCCC4)cc3s2)nc1'
@@ -71,7 +71,7 @@ elif num_step == 2:
                         step_2_seed[['seed','group']], step_2_siblings[['SMILES','group']],
                         selected_molecule])
 
-total_df.to_csv('/home/aw274/Mtb_Inhibition_DL_Pipeline/evaluation/molecular_optimization/sample_output.csv',
+total_df.to_csv('evaluation/molecular_optimization/output/sample_output.csv',
                 index = False)
 
 

@@ -11,13 +11,11 @@ import os
 from sklearn.neighbors import LocalOutlierFactor
 import plotly.express as px
 
-save_dir = '/n/data1/hms/dbmi/farhat/alex/Deep_Learning_Pipeline_for_Mtb_Antibiotics_Discovery/molecular_optimization/'
-
-##### Screening Data ##### 
+##### Screening Data #####
 ## Dragonfold Lead-Like
-dragonfold_leadlike_df = pd.read_csv("/n/data1/hms/dbmi/farhat/alex/screen_dataset/processed/dragonfold/leadlike_49608_mols.csv")
+dragonfold_leadlike_df = pd.read_csv("data/screen_dataset/processed/dragonfold/leadlike_49608_mols.csv")
 dragonfold_leadlike_df['group'] = "dragonfold_leadlike"
-dragonfold_leadlike_save_sir = '/n/data1/hms/dbmi/farhat/alex/Deep_Learning_Pipeline_for_Mtb_Antibiotics_Discovery/chemical_space/' + 'dragonfold_leadlike_morgan.csv'
+dragonfold_leadlike_save_sir = 'evaluation/molecular_optimization/output/dragonfold_leadlike_morgan.csv'
 
 if os.path.exists(dragonfold_leadlike_save_sir):
     dragonfold_leadlike_df= pd.read_csv(dragonfold_leadlike_save_sir)
@@ -36,7 +34,7 @@ else:
     dragonfold_leadlike_df.to_csv(dragonfold_leadlike_save_sir, index=False)
 
 ## Top 100
-top_100_df = pd.read_csv('/home/aw274/Mtb_Inhibition_DL_Pipeline/output/dragonfold/leadlike/top_100_output.csv')
+top_100_df = pd.read_csv('data/output/dragonfold/leadlike/top_100_output.csv')
 top_100_df['group'] = "Top 100 Predicted Molecules"
 
 feature_list = []
@@ -52,7 +50,7 @@ feature_df.columns = [str(item) for item in list(np.arange(0,2048))]
 top_100_df = pd.concat([top_100_df,feature_df],axis=1)
 
 ## Sample Data
-molecular_optimization_sample_df = pd.read_csv("/home/aw274/Mtb_Inhibition_DL_Pipeline/evaluation/molecular_optimization/sample_output.csv")
+molecular_optimization_sample_df = pd.read_csv("evaluation/molecular_optimization/output/sample_output.csv")
 
 feature_list = []
 for smiles in tqdm(molecular_optimization_sample_df['SMILES']):
@@ -123,4 +121,4 @@ fig.update_layout(xaxis=dict(showgrid=False,
                   plot_bgcolor = 'rgba(0, 0, 0, 0)',
                   legend_title=None)
 
-fig.write_html('/home/aw274/Mtb_Inhibition_DL_Pipeline/evaluation/molecular_optimization/chemical_space.html')
+fig.write_html('evaluation/molecular_optimization/output/chemical_space.html')

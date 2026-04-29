@@ -3,12 +3,12 @@ from rdkit import Chem
 from rdkit.Chem import Descriptors
 from tqdm import tqdm
 
-dataset = pd.read_csv('/n/data1/hms/dbmi/farhat/alex/inhibition_training_data/tb_inhibition_A&M/final_data/CompoundFragment_Inhibition_114933_mols_inclusive_with_antibiotics.csv')
-fragment_data = pd.read_csv('/n/data1/hms/dbmi/farhat/alex/inhibition_training_data/fragment/binarized_fragment_inhibition_999_mols.csv')
-all_gen_mols = pd.read_csv('/n/data1/hms/dbmi/farhat/alex/Mtb_Inhibition_DL_Pipeline/output/generative/molecular_optimization_result_v2/all_generated_molecules.csv')
-dragonfold_data = pd.read_csv('/n/data1/hms/dbmi/farhat/alex/Mtb_Inhibition_DL_Pipeline/output/dragonfold/screening_result/screening_labels.csv')
-dragonfold_predicted_six = pd.read_csv('/n/data1/hms/dbmi/farhat/alex/Mtb_Inhibition_DL_Pipeline/output/dragonfold/screening_result/final_output.csv')
-bench_validated_generated = pd.read_csv('/n/data1/hms/dbmi/farhat/alex/Mtb_Inhibition_DL_Pipeline/evaluation/generative_model/bench_validation/verified_six.csv')
+dataset = pd.read_csv('data/inhibition_training_data/tb_inhibition_A&M/final_data/CompoundFragment_Inhibition_114933_mols_inclusive_with_antibiotics.csv')
+fragment_data = pd.read_csv('data/inhibition_training_data/fragment/binarized_fragment_inhibition_999_mols.csv')
+all_gen_mols = pd.read_csv('data/output/generative/molecular_optimization_result_v2/all_generated_molecules.csv')
+dragonfold_data = pd.read_csv('data/output/dragonfold/screening_result/screening_labels.csv')
+dragonfold_predicted_six = pd.read_csv('data/output/dragonfold/screening_result/final_output.csv')
+bench_validated_generated = pd.read_csv('evaluation/bench_validation/designed_mols/verified_six.csv')
 
 # Apply to DataFrame
 n = len(dataset)
@@ -44,7 +44,7 @@ def calculate_molar_mass(smiles):
 dataset['molar_mass'] = dataset['SMILES'].apply(calculate_molar_mass)
 
 # Display result
-dataset.to_csv('evaluation/dataset/training_dataset_molar_mass_labeled.csv', index=False)
+dataset.to_csv('evaluation/dataset/output/training_dataset_molar_mass_labeled.csv', index=False)
 
 def iqr(x):
     return x.quantile(0.75) - x.quantile(0.25)
@@ -61,5 +61,5 @@ summary = dataset.groupby('label')['molar_mass'].agg(
     iqr=lambda x: x.quantile(0.75) - x.quantile(0.25)
 ).reset_index()
 
-summary.to_csv('evaluation/dataset/molar_mass_summary.csv', index=False)
+summary.to_csv('evaluation/dataset/output/molar_mass_summary.csv', index=False)
 print(summary)

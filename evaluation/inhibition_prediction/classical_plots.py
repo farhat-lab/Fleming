@@ -29,7 +29,7 @@ plt.ylim(0.5,1.0)
 plt.ylabel("AUROC")
 ax.spines[['right','top']].set_visible(False)
 plt.tight_layout()
-plt.savefig('/home/aw274/Mtb_Inhibition_DL_Pipeline/evaluation/inhibition_prediction/classic_performance_AUROC.png')
+plt.savefig('evaluation/inhibition_prediction/output/classic_performance_AUROC.png')
 
 plt.figure(figsize=(6.4,4.8))
 ax = plt.subplot(111)
@@ -48,7 +48,7 @@ plt.ylim(0.0,0.5)
 plt.ylabel("AUPRC")
 ax.spines[['right','top']].set_visible(False)
 plt.tight_layout()
-plt.savefig('/home/aw274/Mtb_Inhibition_DL_Pipeline/evaluation/inhibition_prediction/classic_performance_AUPRC.png')
+plt.savefig('evaluation/inhibition_prediction/output/classic_performance_AUPRC.png')
 plt.close()
 
 # Filtered AUPRC
@@ -56,8 +56,8 @@ plt.figure()
 ax = plt.subplot(111)
 filtered_auprcs = []
 for fold in np.arange(0,5,1):
-    precision_df = pd.read_csv(f'/n/data1/hms/dbmi/farhat/alex/Deep_Learning_Pipeline_for_Mtb_Antibiotics_Discovery/cv_evaluation/inhibition_dmpnn/fold_{fold}/evidential_precision_df.csv')
-    recall_df = pd.read_csv(f'/n/data1/hms/dbmi/farhat/alex/Deep_Learning_Pipeline_for_Mtb_Antibiotics_Discovery/cv_evaluation/inhibition_dmpnn/fold_{fold}/evidential_recall_df.csv')
+    precision_df = pd.read_csv(f'data/cv_evaluation/inhibition_dmpnn/fold_{fold}/evidential_precision_df.csv')
+    recall_df = pd.read_csv(f'data/cv_evaluation/inhibition_dmpnn/fold_{fold}/evidential_recall_df.csv')
 
     precision = precision_df.iloc[1,:].to_list()
     recall = recall_df.iloc[1,:].to_list()
@@ -77,7 +77,7 @@ ax.text(0.61,0.96,
         verticalalignment='top')
 
 ax.spines[['right','top']].set_visible(False)
-plt.savefig('/home/aw274/Mtb_Inhibition_DL_Pipeline/evaluation/inhibition_prediction/AUPRC_Plot_DMPNN_ConfidenceFiltering=0.8.png')
+plt.savefig('evaluation/inhibition_prediction/output/AUPRC_Plot_DMPNN_ConfidenceFiltering=0.8.png')
 plt.close()
 
 # Raw AUPRC
@@ -85,8 +85,8 @@ plt.figure()
 ax = plt.subplot(111)
 raw_auprcs = []
 for fold in np.arange(0,5,1):
-    precision_df = pd.read_csv(f'/n/data1/hms/dbmi/farhat/alex/Deep_Learning_Pipeline_for_Mtb_Antibiotics_Discovery/cv_evaluation/inhibition_dmpnn/fold_{fold}/evidential_precision_df.csv')
-    recall_df = pd.read_csv(f'/n/data1/hms/dbmi/farhat/alex/Deep_Learning_Pipeline_for_Mtb_Antibiotics_Discovery/cv_evaluation/inhibition_dmpnn/fold_{fold}/evidential_recall_df.csv')
+    precision_df = pd.read_csv(f'data/cv_evaluation/inhibition_dmpnn/fold_{fold}/evidential_precision_df.csv')
+    recall_df = pd.read_csv(f'data/cv_evaluation/inhibition_dmpnn/fold_{fold}/evidential_recall_df.csv')
 
     precision = precision_df.iloc[-1,:].to_list()
     recall = recall_df.iloc[-1,:].to_list()
@@ -106,7 +106,7 @@ ax.text(0.61,0.96,
         verticalalignment='top')
 
 ax.spines[['right','top']].set_visible(False)
-plt.savefig('/home/aw274/Mtb_Inhibition_DL_Pipeline/evaluation/inhibition_prediction/AUPRC_Plot_DMPNN_Classic.png')
+plt.savefig('evaluation/inhibition_prediction/output/AUPRC_Plot_DMPNN_Classic.png')
 plt.close()
 
 # Raw AUROC
@@ -114,8 +114,8 @@ plt.figure()
 ax = plt.subplot(111)
 raw_aurocs = []
 for fold in np.arange(0,5,1):
-    tpr_df = pd.read_csv(f'/n/data1/hms/dbmi/farhat/alex/Deep_Learning_Pipeline_for_Mtb_Antibiotics_Discovery/cv_evaluation/inhibition_dmpnn/fold_{fold}/evidential_tpr_df.csv')
-    fpr_df = pd.read_csv(f'/n/data1/hms/dbmi/farhat/alex/Deep_Learning_Pipeline_for_Mtb_Antibiotics_Discovery/cv_evaluation/inhibition_dmpnn/fold_{fold}/evidential_fpr_df.csv')
+    tpr_df = pd.read_csv(f'data/cv_evaluation/inhibition_dmpnn/fold_{fold}/evidential_tpr_df.csv')
+    fpr_df = pd.read_csv(f'data/cv_evaluation/inhibition_dmpnn/fold_{fold}/evidential_fpr_df.csv')
 
     tpr = tpr_df.iloc[-1,:].to_list()
     fpr = fpr_df.iloc[-1,:].to_list()
@@ -137,7 +137,7 @@ ax.text(0.05,0.96,
         verticalalignment='top')
 
 ax.spines[['right','top']].set_visible(False)
-plt.savefig('/home/aw274/Mtb_Inhibition_DL_Pipeline/evaluation/inhibition_prediction/AUROC_Plot_DMPNN_Classic.png')
+plt.savefig('evaluation/inhibition_prediction/output/AUROC_Plot_DMPNN_Classic.png')
 plt.close()
 
 # Filtered AUROC
@@ -145,8 +145,8 @@ plt.figure()
 ax = plt.subplot(111)
 filtered_aurocs = []
 for fold in np.arange(0,5,1):
-    tpr_df = pd.read_csv(f'/n/data1/hms/dbmi/farhat/alex/Deep_Learning_Pipeline_for_Mtb_Antibiotics_Discovery/cv_evaluation/inhibition_dmpnn/fold_{fold}/evidential_tpr_df.csv')
-    fpr_df = pd.read_csv(f'/n/data1/hms/dbmi/farhat/alex/Deep_Learning_Pipeline_for_Mtb_Antibiotics_Discovery/cv_evaluation/inhibition_dmpnn/fold_{fold}/evidential_fpr_df.csv')
+    tpr_df = pd.read_csv(f'data/cv_evaluation/inhibition_dmpnn/fold_{fold}/evidential_tpr_df.csv')
+    fpr_df = pd.read_csv(f'data/cv_evaluation/inhibition_dmpnn/fold_{fold}/evidential_fpr_df.csv')
 
     tpr = tpr_df.iloc[1,:].to_list()
     fpr = fpr_df.iloc[1,:].to_list()
@@ -168,7 +168,7 @@ ax.text(0.05,0.96,
         verticalalignment='top')
 
 ax.spines[['right','top']].set_visible(False)
-plt.savefig('/home/aw274/Mtb_Inhibition_DL_Pipeline/evaluation/inhibition_prediction/AUROC_Plot_DMPNN_ConfidenceFiltering=0.8.png')
+plt.savefig('evaluation/inhibition_prediction/output/AUROC_Plot_DMPNN_ConfidenceFiltering=0.8.png')
 plt.close()
 
 

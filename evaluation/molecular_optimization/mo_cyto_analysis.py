@@ -4,8 +4,8 @@ from matplotlib import pyplot as plt
 from scipy.stats import wilcoxon
 
 # hepg2 cytotoxicity analysis
-hepg2_before = pd.read_csv('/n/data1/hms/dbmi/farhat/alex/Mtb_Inhibition_DL_Pipeline/evaluation/molecular_optimization/hepg2_before.csv')
-hepg2_after = pd.read_csv('/n/data1/hms/dbmi/farhat/alex/Mtb_Inhibition_DL_Pipeline/evaluation/molecular_optimization/hepg2_after.csv')
+hepg2_before = pd.read_csv('evaluation/molecular_optimization/output/hepg2_before.csv')
+hepg2_after = pd.read_csv('evaluation/molecular_optimization/output/hepg2_after.csv')
 
 ## Remove non-optimized molecules
 hepg2_before_filtered = hepg2_before[~hepg2_before['SMILES'].isin(hepg2_after['SMILES'])]
@@ -33,12 +33,12 @@ plt.title('HepG2 Cytotoxicity Distribution Before and After Molecular Optimizati
 plt.xlabel('Cytotoxicity Score')
 plt.ylabel('Density')
 plt.legend()
-plt.savefig('/n/data1/hms/dbmi/farhat/alex/Mtb_Inhibition_DL_Pipeline/evaluation/molecular_optimization/hepg2_cytotoxicity_distribution.png')
+plt.savefig('evaluation/molecular_optimization/output/hepg2_cytotoxicity_distribution.png')
 plt.close()
 
 # hskmc totoxicity analysis
-hskmc_before = pd.read_csv('/n/data1/hms/dbmi/farhat/alex/Mtb_Inhibition_DL_Pipeline/evaluation/molecular_optimization/hskmc_before.csv')
-hskmc_after = pd.read_csv('/n/data1/hms/dbmi/farhat/alex/Mtb_Inhibition_DL_Pipeline/evaluation/molecular_optimization/hskmc_after.csv')
+hskmc_before = pd.read_csv('evaluation/molecular_optimization/output/hskmc_before.csv')
+hskmc_after = pd.read_csv('evaluation/molecular_optimization/output/hskmc_after.csv')
 
 ## Remove non-optimized molecules
 hskmc_before_filtered = hskmc_before[~hskmc_before['SMILES'].isin(hskmc_after['SMILES'])]
@@ -66,12 +66,12 @@ plt.title('HskMC Cytotoxicity Distribution Before and After Molecular Optimizati
 plt.xlabel('Cytotoxicity Score')
 plt.ylabel('Density')
 plt.legend()
-plt.savefig('/n/data1/hms/dbmi/farhat/alex/Mtb_Inhibition_DL_Pipeline/evaluation/molecular_optimization/hskmc_cytotoxicity_distribution.png')
+plt.savefig('evaluation/molecular_optimization/output/hskmc_cytotoxicity_distribution.png')
 plt.close()
 
 # imr90 toxicity analysis
-imr90_before = pd.read_csv('/n/data1/hms/dbmi/farhat/alex/Mtb_Inhibition_DL_Pipeline/evaluation/molecular_optimization/imr90_before.csv')
-imr90_after = pd.read_csv('/n/data1/hms/dbmi/farhat/alex/Mtb_Inhibition_DL_Pipeline/evaluation/molecular_optimization/imr90_after.csv')
+imr90_before = pd.read_csv('evaluation/molecular_optimization/output/imr90_before.csv')
+imr90_after = pd.read_csv('evaluation/molecular_optimization/output/imr90_after.csv')
 
 ## Remove non-optimized molecules
 imr90_before_filtered = imr90_before[~imr90_before['SMILES'].isin(imr90_after['SMILES'])]
@@ -99,6 +99,6 @@ plt.title('IMR90 Cytotoxicity Distribution Before and After Molecular Optimizati
 plt.xlabel('Cytotoxicity Score')
 plt.ylabel('Density')
 plt.legend()
-plt.savefig('/n/data1/hms/dbmi/farhat/alex/Mtb_Inhibition_DL_Pipeline/evaluation/molecular_optimization/imr90_cytotoxicity_distribution.png')
+plt.savefig('evaluation/molecular_optimization/output/imr90_cytotoxicity_distribution.png')
 plt.close()
 

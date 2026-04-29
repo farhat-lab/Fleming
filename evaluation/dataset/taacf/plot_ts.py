@@ -3,7 +3,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 import seaborn as sns
 
-mlsmr_taccf_max_sim = pd.read_csv('/n/data1/hms/dbmi/farhat/alex/Mtb_Inhibition_DL_Pipeline/evaluation/dataset/taacf/mlsmr_taacf_max_similarities.csv')
+mlsmr_taccf_max_sim = pd.read_csv('evaluation/dataset/taacf/output/mlsmr_taacf_max_similarities.csv')
 
 print("############ Pooled mlsmr-taacf Intra-Dataset Similarity ############")
 print(f'Number of molecules in pooled mlsmr and taacf dataset: {len(mlsmr_taccf_max_sim)}')
@@ -62,13 +62,13 @@ for text in legend.get_texts():
 # plt.gca().spines['bottom'].set_linewidth(3)
 
 # Save figure
-plt.savefig('/n/data1/hms/dbmi/farhat/alex/Mtb_Inhibition_DL_Pipeline/evaluation/dataset/taacf/pooled_mlsmr_taacf_similarity_distributions.png', 
+plt.savefig('evaluation/dataset/taacf/output/pooled_mlsmr_taacf_similarity_distributions.png',
             dpi=300,
             bbox_inches='tight')
 plt.close()
 
 
-inter_dataset_max_sim = pd.read_csv('/n/data1/hms/dbmi/farhat/alex/Mtb_Inhibition_DL_Pipeline/evaluation/dataset/taacf/inter_dataset_max_similarities.csv')
+inter_dataset_max_sim = pd.read_csv('evaluation/dataset/taacf/output/inter_dataset_max_similarities.csv')
 print("############ Inter-Dataset Structural Overlap Between Our dataset and Pooled mlsmr-taacf ############")
 print(f'Number of molecules in Our dataset: {len(inter_dataset_max_sim)}')
 print(f"Number of overlapping molecules (Tanimoto similarity = 1.0) between Our dataset and pooled mlsmr-taacf: {(inter_dataset_max_sim['Max_Tanimoto_Similarity'] == 1.0).sum()}")
@@ -127,7 +127,7 @@ for text in legend.get_texts():
 # plt.gca().spines['bottom'].set_linewidth(3)
 
 # Save figure
-plt.savefig('/n/data1/hms/dbmi/farhat/alex/Mtb_Inhibition_DL_Pipeline/evaluation/dataset/taacf/interdatset_similarity_distributions.png', 
+plt.savefig('evaluation/dataset/taacf/output/interdatset_similarity_distributions.png',
             dpi=300,
             bbox_inches='tight')
 plt.close()

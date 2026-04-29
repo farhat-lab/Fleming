@@ -12,9 +12,9 @@ palette_dict = {model: color for model, color in zip(display_names, colors)}
 colors = palette_dict
 
 ### DMPNN vs. EGNN vs. FFNN
-dmpnn_prediction_dir = '/n/data1/hms/dbmi/farhat/alex/Deep_Learning_Pipeline_for_Mtb_Antibiotics_Discovery/cv_evaluation/inhibition_dmpnn/'
-egnn_prediction_dir = '/n/data1/hms/dbmi/farhat/alex/Deep_Learning_Pipeline_for_Mtb_Antibiotics_Discovery/cv_evaluation/inhibition_egnn/'
-ffnn_prediction_dir = '/n/data1/hms/dbmi/farhat/alex/Deep_Learning_Pipeline_for_Mtb_Antibiotics_Discovery/cv_evaluation/inhibition_ffnn/'
+dmpnn_prediction_dir = 'data/cv_evaluation/inhibition_dmpnn/'
+egnn_prediction_dir = 'data/cv_evaluation/inhibition_egnn/'
+ffnn_prediction_dir = 'data/cv_evaluation/inhibition_ffnn/'
 
 ## AUROC
 plt.rcParams['axes.labelsize'] = 20   # Axis labels
@@ -38,7 +38,7 @@ mean_dmpnn_fpr = np.linspace(0, 1, 100)
 
 for fold in range(0,5):
     prediction_df = pd.read_csv(dmpnn_prediction_dir + f"fold_{fold}/test_pred.csv")
-    true_label_df = pd.read_csv(f'/n/data1/hms/dbmi/farhat/alex/Deep_Learning_Pipeline_for_Mtb_Antibiotics_Discovery/final_checkpoints/Full_TB_Dataset_scaffold_dropout=0.2_cv=5/fold_{fold}/test_data.csv')
+    true_label_df = pd.read_csv(f'data/final_checkpoints/Full_TB_Dataset_scaffold_dropout=0.2_cv=5/fold_{fold}/test_data.csv')
 
     assert len(set(prediction_df['SMILES']).intersection(set(true_label_df['SMILES']))) == len(prediction_df), "Prediction and True Label not aligned."
 
@@ -91,7 +91,7 @@ mean_dmpnn_fpr = np.linspace(0, 1, 100)
 
 for fold in range(0,5):
     prediction_df = pd.read_csv(dmpnn_prediction_dir + f"fold_{fold}/test_pred.csv")
-    true_label_df = pd.read_csv(f'/n/data1/hms/dbmi/farhat/alex/Deep_Learning_Pipeline_for_Mtb_Antibiotics_Discovery/final_checkpoints/Full_TB_Dataset_scaffold_dropout=0.2_cv=5/fold_{fold}/test_data.csv')
+    true_label_df = pd.read_csv(f'data/final_checkpoints/Full_TB_Dataset_scaffold_dropout=0.2_cv=5/fold_{fold}/test_data.csv')
 
     assert len(set(prediction_df['SMILES']).intersection(set(true_label_df['SMILES']))) == len(prediction_df), "Prediction and True Label not aligned."
 
@@ -229,11 +229,11 @@ ax.fill_between(
 )
 
 # Transformer-M
-fold_pred_df_list = [# '/n/data1/hms/dbmi/farhat/alex/model_checkpoints/Transformer-M/fold_0/val_pred.csv',
-                     # '/n/data1/hms/dbmi/farhat/alex/model_checkpoints/Transformer-M/fold_1/val_pred.csv',
-                     '/n/data1/hms/dbmi/farhat/alex/model_checkpoints/Transformer-M/fold_2/val_pred_11.csv',
-                     '/n/data1/hms/dbmi/farhat/alex/model_checkpoints/Transformer-M/fold_3/val_pred_28.csv',
-                     '/n/data1/hms/dbmi/farhat/alex/model_checkpoints/Transformer-M/fold_4/val_pred_16.csv']
+fold_pred_df_list = [# 'data/model_checkpoints/Transformer-M/fold_0/val_pred.csv',
+                     # 'data/model_checkpoints/Transformer-M/fold_1/val_pred.csv',
+                     'data/model_checkpoints/Transformer-M/fold_2/val_pred_11.csv',
+                     'data/model_checkpoints/Transformer-M/fold_3/val_pred_28.csv',
+                     'data/model_checkpoints/Transformer-M/fold_4/val_pred_16.csv']
 
 ffnn_tprs = []
 ffnn_aucs = []
@@ -243,7 +243,7 @@ mean_ffnn_fpr = np.linspace(0, 1, 100)
 # fig, ax = plt.subplots(figsize=(6, 6))
 for fold in range(0,3):
     prediction_df = pd.read_csv(fold_pred_df_list[fold])
-    # true_label_df = pd.read_csv(f'/n/data1/hms/dbmi/farhat/alex/inhibition_training_data/tb_inhibition_A&M/final_data/CompoundFragment_Inhibition_114933_mols_inclusive_with_antibiotics.csv')
+    # true_label_df = pd.read_csv(f'data/inhibition_training_data/tb_inhibition_A&M/final_data/CompoundFragment_Inhibition_114933_mols_inclusive_with_antibiotics.csv')
     # true_label_df = true_label_df[true_label_df['SMILES'].isin(prediction_df['SMILES'])]
 
     # assert len(set(prediction_df['SMILES']).intersection(set(true_label_df['SMILES']))) == len(prediction_df), "Prediction and True Label not aligned."
@@ -295,8 +295,8 @@ mean_ffnn_fpr = np.linspace(0, 1, 100)
 # fig_si, ax_si = plt.subplots()
 # fig, ax = plt.subplots(figsize=(6, 6))
 for fold in range(0,5):
-    prediction_df = pd.read_csv('/home/aw274/Mtb_Inhibition_DL_Pipeline/evaluation/random_forest/' + f"fold{fold}_test_predictions.csv")
-    # true_label_df = pd.read_csv(f'/n/data1/hms/dbmi/farhat/alex/inhibition_training_data/tb_inhibition_A&M/final_data/CompoundFragment_Inhibition_114933_mols_inclusive_with_antibiotics.csv')
+    prediction_df = pd.read_csv('evaluation/inhibition_prediction/random_forest/output/' + f"fold{fold}_test_predictions.csv")
+    # true_label_df = pd.read_csv(f'data/inhibition_training_data/tb_inhibition_A&M/final_data/CompoundFragment_Inhibition_114933_mols_inclusive_with_antibiotics.csv')
     # true_label_df = true_label_df[true_label_df['SMILES'].isin(prediction_df['SMILES'])]
 
     # assert len(set(prediction_df['SMILES']).intersection(set(true_label_df['SMILES']))) == len(prediction_df), "Prediction and True Label not aligned."
@@ -361,11 +361,11 @@ for text in legend.get_texts():
 # ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.2), ncol=2)
 # plt.legend(bbox_to_anchor = (2.2, 0.6), loc='center right')
 # plt.tight_layout()
-# plt.savefig('/n/data1/hms/dbmi/farhat/alex/Mtb_Inhibition_DL_Pipeline/evaluation/inhibition_prediction/Cross_Validation_AUROC.png',
+# plt.savefig('evaluation/inhibition_prediction/output/Cross_Validation_AUROC.png',
 #             bbox_inches='tight')
-plt.savefig('/n/data1/hms/dbmi/farhat/alex/Mtb_Inhibition_DL_Pipeline/evaluation/inhibition_prediction/Cross_Validation_AUROC_evi.png',
+plt.savefig('evaluation/inhibition_prediction/output/Cross_Validation_AUROC_evi.png',
             bbox_inches='tight')
-plt.savefig('/n/data1/hms/dbmi/farhat/alex/Mtb_Inhibition_DL_Pipeline/evaluation/inhibition_prediction/Cross_Validation_AUROC_evi.pdf',
+plt.savefig('evaluation/inhibition_prediction/output/Cross_Validation_AUROC_evi.pdf',
             bbox_inches='tight')
 
 ## AUPRC
@@ -383,7 +383,7 @@ for spine in ax.spines.values():
 evi_dmpnn_auprcs = []
 for fold in range(0,5):
     prediction_df = pd.read_csv(dmpnn_prediction_dir + f"fold_{fold}/test_pred.csv")
-    true_label_df = pd.read_csv(f'/n/data1/hms/dbmi/farhat/alex/Deep_Learning_Pipeline_for_Mtb_Antibiotics_Discovery/final_checkpoints/Full_TB_Dataset_scaffold_dropout=0.2_cv=5/fold_{fold}/test_data.csv')
+    true_label_df = pd.read_csv(f'data/final_checkpoints/Full_TB_Dataset_scaffold_dropout=0.2_cv=5/fold_{fold}/test_data.csv')
 
     prediction_df = prediction_df[prediction_df['inhibition_dirichlet_uncal_uncertainty'] < 0.4]
     true_label_df = true_label_df[true_label_df['SMILES'].isin(prediction_df['SMILES'])]
@@ -406,7 +406,7 @@ ax.plot([], [],
 dmpnn_auprcs = []
 for fold in range(0,5):
     prediction_df = pd.read_csv(dmpnn_prediction_dir + f"fold_{fold}/test_pred.csv")
-    true_label_df = pd.read_csv(f'/n/data1/hms/dbmi/farhat/alex/Deep_Learning_Pipeline_for_Mtb_Antibiotics_Discovery/final_checkpoints/Full_TB_Dataset_scaffold_dropout=0.2_cv=5/fold_{fold}/test_data.csv')
+    true_label_df = pd.read_csv(f'data/final_checkpoints/Full_TB_Dataset_scaffold_dropout=0.2_cv=5/fold_{fold}/test_data.csv')
 
     precision, recall, thresholds = precision_recall_curve(true_label_df['inhibition'],
                                                            prediction_df['inhibition'])
@@ -480,7 +480,7 @@ ax.plot([], [],
 # Random Forest
 rf_auprcs = []
 for fold in range(0,5):
-    prediction_df = pd.read_csv('/home/aw274/Mtb_Inhibition_DL_Pipeline/evaluation/random_forest/' + f"fold{fold}_test_predictions.csv")
+    prediction_df = pd.read_csv('evaluation/inhibition_prediction/random_forest/output/' + f"fold{fold}_test_predictions.csv")
 
     precision, recall, thresholds = precision_recall_curve(prediction_df['inhibition'],
                                                            prediction_df['pred'])
@@ -515,7 +515,7 @@ for text in legend.get_texts():
     text.set_fontweight('bold')
     text.set_fontsize(20)
 
-plt.savefig('/n/data1/hms/dbmi/farhat/alex/Mtb_Inhibition_DL_Pipeline/evaluation/inhibition_prediction/Cross_Validation_AUPRC.png',
+plt.savefig('evaluation/inhibition_prediction/output/Cross_Validation_AUPRC.png',
             bbox_inches='tight')
-plt.savefig('/n/data1/hms/dbmi/farhat/alex/Mtb_Inhibition_DL_Pipeline/evaluation/inhibition_prediction/Cross_Validation_AUPRC.pdf',
+plt.savefig('evaluation/inhibition_prediction/output/Cross_Validation_AUPRC.pdf',
             bbox_inches='tight')

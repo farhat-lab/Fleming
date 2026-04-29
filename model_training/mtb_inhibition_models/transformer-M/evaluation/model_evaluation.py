@@ -70,4 +70,4 @@ def model_evaluation(dataset_dir: str,
 
 
 model_evaluation("CHHH",
-                 "/n/scratch/users/a/aw274/epoch=9-step=7820.ckpt")
+                 "data/epoch=9-step=7820.ckpt")

@@ -361,7 +361,7 @@ class TrainingModule(LightningModule):
             )
 
         # if self.output_dir is not None:
-        test_df.to_csv('/home/aw274/egnn/external_predictions.csv',
+        test_df.to_csv('data/egnn/external_predictions.csv',
                        index = False)
 
     def configure_optimizers(self):

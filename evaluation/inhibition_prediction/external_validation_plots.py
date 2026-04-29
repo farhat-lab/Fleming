@@ -3,7 +3,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 from sklearn.metrics import RocCurveDisplay, auc, PrecisionRecallDisplay, precision_recall_curve, roc_auc_score, roc_curve
 
-true_label = pd.read_csv('/n/data1/hms/dbmi/farhat/alex/validation_dataset/outsample_data.csv')
+true_label = pd.read_csv('data/validation_dataset/outsample_data.csv')
 
 print("Positive Rate: ", sum(true_label['inhibition'])/len(true_label))
 
@@ -13,7 +13,7 @@ ax = plt.subplot(111)
 plt.plot(np.arange(0,1.1,0.1), np.arange(0,1.1,0.1), 'k--')
 
 ## DMPNN
-dmpnn_prediction = pd.read_csv('/home/aw274/Mtb_Inhibition_DL_Pipeline/evaluation/inhibition_prediction/new_outsample_prediction.csv')
+dmpnn_prediction = pd.read_csv('evaluation/inhibition_prediction/output/new_outsample_prediction.csv')
 
 fpr, tpr, threshold = roc_curve(true_label['inhibition'], dmpnn_prediction['inhibition'])
 
@@ -23,7 +23,7 @@ plt.plot(fpr, tpr,
 ## EGNN 
 egnn_prediction = pd.DataFrame()
 for i in range(5):
-    egnn_fold_prediction = pd.read_csv(f'/home/aw274/egnn/evaluation/external_predictions/EGNN_fold_{i}_predictions.csv')
+    egnn_fold_prediction = pd.read_csv(f'data/egnn/evaluation/external_predictions/EGNN_fold_{i}_predictions.csv')
     if i == 0:
         egnn_prediction = egnn_fold_prediction
     else:
@@ -45,7 +45,7 @@ plt.plot(fpr, tpr,
 ## FFNN
 ffnn_prediction = pd.DataFrame()
 for i in range(5):
-    ffnn_fold_prediction = pd.read_csv(f'/home/aw274/egnn/evaluation/external_predictions/FFNN_fold_{i}_predictions.csv')
+    ffnn_fold_prediction = pd.read_csv(f'data/egnn/evaluation/external_predictions/FFNN_fold_{i}_predictions.csv')
     if i == 0:
         ffnn_prediction = ffnn_fold_prediction
     else:
@@ -67,7 +67,7 @@ plt.plot(fpr, tpr,
 ## Random Forest
 rf_prediction = pd.DataFrame()
 for i in range(5):
-    rf_fold_prediction = pd.read_csv(f'/home/aw274/Mtb_Inhibition_DL_Pipeline/evaluation/random_forest/fold{i}_external_predictions.csv')
+    rf_fold_prediction = pd.read_csv(f'evaluation/inhibition_prediction/random_forest/output/fold{i}_external_predictions.csv')
     if i == 0:
         rf_prediction = rf_fold_prediction
     else:
@@ -102,7 +102,7 @@ box = ax.get_position()
 ax.set_position([box.x0, box.y0, box.width * 0.5, box.height])
 ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
 
-plt.savefig('/home/aw274/Mtb_Inhibition_DL_Pipeline/evaluation/inhibition_prediction/External_Validation_AUROC')
+plt.savefig('evaluation/inhibition_prediction/output/External_Validation_AUROC')
 
 ## AUPRC
 plt.figure(figsize=(12.8,4.8))
@@ -152,4 +152,4 @@ ax.spines[['right','top']].set_visible(False)
 box = ax.get_position()
 ax.set_position([box.x0, box.y0, box.width * 0.5, box.height])
 ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
-plt.savefig('/home/aw274/Mtb_Inhibition_DL_Pipeline/evaluation/inhibition_prediction/External_Validation_AUPRC')
+plt.savefig('evaluation/inhibition_prediction/output/External_Validation_AUPRC')

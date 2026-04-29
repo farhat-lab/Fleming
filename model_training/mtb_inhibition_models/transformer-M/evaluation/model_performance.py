@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from sklearn.metrics import RocCurveDisplay, auc, PrecisionRecallDisplay, precision_recall_curve
 from matplotlib import pyplot as plt
-prediction_df = pd.read_csv('/n/data1/hms/dbmi/farhat/alex/model_checkpoints/Transformer-M/fold_4/val_pred_2.csv')
+prediction_df = pd.read_csv('data/model_checkpoints/Transformer-M/fold_4/val_pred_2.csv')
 
 # DMPNN
 dmpnn_tprs = []
@@ -60,13 +60,13 @@ ax.fill_between(
     # label=r"$\pm$ 1 std. dev.",
 )
 plt.legend()
-plt.savefig('/home/aw274/ML_Drug_Discovery/evaluation/cv_auroc_plot.png')
+plt.savefig('data/ML_Drug_Discovery/evaluation/cv_auroc_plot.png')
 # print(pos_df)
 # print(neg_df)
 
 plt.figure()
 for fold in range(0,5):
-    prediction_df = pd.read_csv('/n/data1/hms/dbmi/farhat/alex/model_checkpoints/Transformer-M/fold_4/val_pred_2.csv')
+    prediction_df = pd.read_csv('data/model_checkpoints/Transformer-M/fold_4/val_pred_2.csv')
     
 
     precision, recall, thresholds = precision_recall_curve(prediction_df['inhibition'],
@@ -85,4 +85,4 @@ for fold in range(0,5):
                 color = 'blue')
 
 plt.legend()
-plt.savefig('/home/aw274/ML_Drug_Discovery/evaluation/cv_auprc_plot.png')
+plt.savefig('data/ML_Drug_Discovery/evaluation/cv_auprc_plot.png')

@@ -1,3 +1,6 @@
+*.pptx
+.claude
+evaluation/archive/
 # Data
 *.csv
 *.xlsx

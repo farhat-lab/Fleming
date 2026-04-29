@@ -8,9 +8,9 @@
 #SBATCH -e run_logs/hostname_%j.err
 
 # Define Directories
-output_folder_dir="/home/aw274/Mtb_Inhibition_DL_Pipeline/evaluation/molecular_optimization/"
-seed_dir="/home/aw274/Mtb_Inhibition_DL_Pipeline/evaluation/molecular_optimization/step-wise_data/selected_molecules_step2.csv"
-# seed_dir="/home/aw274/Mtb_Inhibition_DL_Pipeline/evaluation/molecular_optimization/step-wise_data/sample_seed.csv"
+output_folder_dir="evaluation/molecular_optimization/output/"
+seed_dir="evaluation/molecular_optimization/output/step-wise_data/selected_molecules_step2.csv"
+# seed_dir="evaluation/molecular_optimization/output/step-wise_data/sample_seed.csv"
 
 improving_siblings_dir=$output_folder_dir"improving_siblings.csv"
 best_siblings_dir=$output_folder_dir"best_siblings.csv"

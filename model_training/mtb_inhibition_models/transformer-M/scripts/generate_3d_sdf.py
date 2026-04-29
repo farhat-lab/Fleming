@@ -79,17 +79,17 @@ def generate_3d_structure(smiles_file_dir, save_file_dir):
     
     writer.close()
 
-    np.save('/n/scratch/users/a/aw274/data/tb_data/raw_data/3d_conversion_failure_index.npy', np.array(failed_mol_index), allow_pickle=True)
+    np.save('data/tb_data/raw_data/3d_conversion_failure_index.npy', np.array(failed_mol_index), allow_pickle=True)
 
     return hmols
 
-# hmols = generate_3d_structure(smiles_file_dir = '/n/scratch/users/a/aw274/data/tb_data/raw_data/Batch1and2_data.csv',
-#                       save_file_dir = '/n/scratch/users/a/aw274/data/tb_data/raw_data/Batch1and2_3d_data.sdf')
+# hmols = generate_3d_structure(smiles_file_dir = 'data/tb_data/raw_data/Batch1and2_data.csv',
+#                       save_file_dir = 'data/tb_data/raw_data/Batch1and2_3d_data.sdf')
 
-hmols = generate_3d_structure(smiles_file_dir = '/n/scratch/users/a/aw274/data/tb_data/raw_data/Batch1and2_data.csv',
-                              save_file_dir = '/n/scratch/users/a/aw274/data/tb_data/raw_data/TB_Inhibition_3d_data_with_labels.sdf')
+hmols = generate_3d_structure(smiles_file_dir = 'data/tb_data/raw_data/Batch1and2_data.csv',
+                              save_file_dir = 'data/tb_data/raw_data/TB_Inhibition_3d_data_with_labels.sdf')
 
-# hmols = Chem.SDMolSupplier('/n/scratch/users/a/aw274/data/tb_data/raw_data/Batch1and2_3d_data.csv')
+# hmols = Chem.SDMolSupplier('data/tb_data/raw_data/Batch1and2_3d_data.csv')
 
 # print(hmols[0].GetProp("_tb_inhibition"))
 

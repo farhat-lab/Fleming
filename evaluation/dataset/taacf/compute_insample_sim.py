@@ -7,13 +7,13 @@ from tqdm import tqdm
 
 
 # Load pre-split train/test datasets
-train_mlsmr = pd.read_csv('/n/data1/hms/dbmi/farhat/anz226/FlemingDev/experiments/compare_datasets/mlsmr_train.csv')
-test_mlsmr = pd.read_csv('/n/data1/hms/dbmi/farhat/anz226/FlemingDev/experiments/compare_datasets/mlsmr_test.csv')
-val_mlsmr = pd.read_csv('/n/data1/hms/dbmi/farhat/anz226/FlemingDev/experiments/compare_datasets/mlsmr_val.csv')
+train_mlsmr = pd.read_csv('data/FlemingDev/experiments/compare_datasets/mlsmr_train.csv')
+test_mlsmr = pd.read_csv('data/FlemingDev/experiments/compare_datasets/mlsmr_test.csv')
+val_mlsmr = pd.read_csv('data/FlemingDev/experiments/compare_datasets/mlsmr_val.csv')
 
-train_taacf = pd.read_csv('/n/data1/hms/dbmi/farhat/anz226/FlemingDev/experiments/compare_datasets/taacf_train.csv')
-val_taacf = pd.read_csv('/n/data1/hms/dbmi/farhat/anz226/FlemingDev/experiments/compare_datasets/taacf_val.csv')
-test_taacf = pd.read_csv('/n/data1/hms/dbmi/farhat/anz226/FlemingDev/experiments/compare_datasets/taacf_test.csv')
+train_taacf = pd.read_csv('data/FlemingDev/experiments/compare_datasets/taacf_train.csv')
+val_taacf = pd.read_csv('data/FlemingDev/experiments/compare_datasets/taacf_val.csv')
+test_taacf = pd.read_csv('data/FlemingDev/experiments/compare_datasets/taacf_test.csv')
 
 # Remove NaNsmiles
 print('removing nans')
@@ -66,5 +66,5 @@ for i, fp in enumerate(tqdm(mlsmr_taacf_valid_fps)):
 pd.DataFrame({
     'SMILES': mlsmr_taacf_valid_smiles,
     'Max_Tanimoto_Similarity': mlsmr_taacf_max_similarities
-}).to_csv('evaluation/dataset/taacf/mlsmr_taacf_max_similarities.csv', index=False)
+}).to_csv('evaluation/dataset/taacf/output/mlsmr_taacf_max_similarities.csv', index=False)
 
