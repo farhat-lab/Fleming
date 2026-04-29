@@ -201,6 +201,19 @@ class ADMETUtils(Basic_Agent):
             "conflicts with a low-risk model prediction, present a more cautious adjusted conclusion instead of "
             "repeating the model output as fact."
         )
+
+    def _get_cytotoxicity_model_paths(self):
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        default_paths = [
+            'model_checkpoints/hepg2_model.pt',
+            'model_checkpoints/hskmc_model.pt',
+            'model_checkpoints/imr90_model.pt',
+        ]
+        configured_paths = self.config.get('cytotox_model_paths', default_paths)
+        return [
+            path if os.path.isabs(path) else os.path.join(project_root, path)
+            for path in configured_paths
+        ]
         
     def get_binarized_prediction(self, smiles:list):
         '''
@@ -521,24 +534,12 @@ Total Failed ADMET Tasks: {pred_row['fail_sum']:.0f}/37
         if isinstance(smiles_list, str):
             smiles_list = [smiles_list]
         
-        # Use config or defaults for model paths, resolvable
-        # Currently hardcoded in original file:
-        # '/n/data1/hms/dbmi/farhat/anz226/FlemingDev/model_checkpoints/cytotox_models/hepg2_tox/fold_0/model_0/model.pt'
-        # I should change this to use relative paths if possible, or config.
-        # Since I don't have these paths in config, I'll use placeholders relative to root.
-        
-        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        default_paths = [
-            'model_checkpoints/cytotox_models/hepg2_tox/fold_0/model_0/model.pt',
-            'model_checkpoints/cytotox_models/hskmc_tox/fold_0/model_0/model.pt',
-            'model_checkpoints/cytotox_models/imr90_tox/fold_0/model_0/model.pt'
-        ]
-        
-        model_paths = [os.path.join(project_root, p) for p in default_paths]
+        model_paths = self._get_cytotoxicity_model_paths()
         
         # Check if they exist
         if not all(os.path.exists(p) for p in model_paths):
-            return "Cytotoxicity models not found."
+            missing_paths = [p for p in model_paths if not os.path.exists(p)]
+            return f"Cytotoxicity models not found: {missing_paths}"
 
         model_list = self.load_models(model_paths=model_paths, device='cpu')
         

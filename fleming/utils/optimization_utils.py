@@ -483,32 +483,7 @@ Format: ["SMILES1", "SMILES2", ...]
         Returns:
             String with cytotoxicity predictions for all molecules
         """
-        # Convert single SMILES to list
-        if isinstance(smiles_list, str):
-            smiles_list = [smiles_list]
-            
-        model_list = self.load_models(model_paths = ['/n/data1/hms/dbmi/farhat/anz226/FlemingDev/model_checkpoints/cytotox_models/hepg2_tox/fold_0/model_0/model.pt', '/n/data1/hms/dbmi/farhat/anz226/FlemingDev/model_checkpoints/cytotox_models/hskmc_tox/fold_0/model_0/model.pt', "/n/data1/hms/dbmi/farhat/anz226/FlemingDev/model_checkpoints/cytotox_models/imr90_tox/fold_0/model_0/model.pt"], device = 'cpu')
-        
-        all_results = []
-        
-        for i, smiles in enumerate(smiles_list):
-            preds_list = []
-            uncertainties_list = []
-            for c in model_list:
-                preds, uncertainties = self.make_prediction([c], [smiles])
-                preds_list.append(preds)
-                uncertainties_list.append(uncertainties)
-
-            result = (
-                f"For molecule {i+1} ({smiles}), the predicted hepatocyte toxicity prediction is {preds_list[0]} "
-                f"with an uncertainty of {uncertainties_list[0]}. The predicted skeletal muscle toxicity prediction "
-                f"is {preds_list[1]} with an uncertainty of {uncertainties_list[1]}. The predicted lung (imr90) "
-                f"toxicity prediction is {preds_list[2]} with an uncertainty of {uncertainties_list[2]}. "
-                f"{CYTOTOX_MODEL_CONTEXT} Report raw model outputs separately from any literature-adjusted conclusion."
-            )
-            all_results.append(result)
-        
-        return "\n\n".join(all_results)
+        return self.admet_utils.get_cytotoxicity_copilot_mode(smiles_list)
     def get_rdkit_documentation(self, description_of_task: str):
         """
         """
