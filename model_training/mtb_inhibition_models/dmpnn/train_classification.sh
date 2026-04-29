@@ -7,9 +7,9 @@
 #SBATCH -o run_logs/hostname_%j.out
 #SBATCH -e run_logs/hostname_%j.err
 
-python train.py --data_path '/n/data1/hms/dbmi/farhat/alex/inhibition_training_data/tb_inhibition_A&M/final_data/CompoundFragment_Inhibition_114933_mols_inclusive_with_antibiotics.csv' \
+python train.py --data_path 'data/inhibition_training_data/tb_inhibition_A&M/final_data/CompoundFragment_Inhibition_114933_mols_inclusive_with_antibiotics.csv' \
                 --dataset_type 'classification' \
-                --save_dir '/n/data1/hms/dbmi/farhat/alex/model_checkpoints/Full_TB_Dataset_traditional_classification_scaffold' \
+                --save_dir 'data/model_checkpoints/Full_TB_Dataset_traditional_classification_scaffold' \
                 --split_type 'scaffold_balanced' \
                 --num_folds '1' \
                 --metric 'auc' \

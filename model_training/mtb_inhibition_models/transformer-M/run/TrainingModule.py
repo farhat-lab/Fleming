@@ -72,7 +72,7 @@ class TrainingModule(LightningModule):
             print(self.model)
 
             if finetune:
-                state_dict = torch.load('/n/scratch/users/a/aw274/Transformer-M/checkpoints/L12-old.pt')['model']
+                state_dict = torch.load('data/Transformer-M/checkpoints/L12-old.pt')['model']
 
                 for key in list(state_dict.keys()):
                     state_dict[key[8:]] = state_dict.pop(key)

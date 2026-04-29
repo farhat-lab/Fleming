@@ -8,7 +8,7 @@ from rdkit.Chem import AllChem
 from scipy.stats import ttest_ind, mannwhitneyu
 
 # Bench Result DataFrame
-bench_validation_results = pd.read_excel('output/dragonfold/updated_screening_result/Charm_mols_WCA_full_SMILES_bgCorrected_forAlex.xlsx',
+bench_validation_results = pd.read_excel('data/output/dragonfold/updated_screening_result/Charm_mols_WCA_full_SMILES_bgCorrected_forAlex.xlsx',
                                          sheet_name='CDD Export 1')
 
 bench_validation_results = bench_validation_results[['SMILES', 
@@ -25,7 +25,7 @@ bench_validation_results['Mtb_WCA_mc2-7000_Resazurin: concentration (uM)'] = ben
 bench_validation_results['Mtb_WCA_mc2-7000_Resazurin: % inhibition (%)'] = bench_validation_results['Mtb_WCA_mc2-7000_Resazurin: % inhibition (%)'].apply(maybe_split)
 
 # Prediction DataFrame
-final_output = pd.read_csv('output/dragonfold/updated_screening_result/ensemble_pass_both.csv')
+final_output = pd.read_csv('data/output/dragonfold/updated_screening_result/ensemble_pass_both.csv')
 print(f"Predicted Hits: {len(final_output)}")
 print(final_output[~final_output['SMILES'].isin(bench_validation_results['SMILES'])])
 

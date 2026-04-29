@@ -3,7 +3,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 import seaborn as sns
 
-mlsmr_taccf_max_sim = pd.read_csv('evaluation/dataset/taacf/mlsmr_taacf_max_similarities.csv')
+mlsmr_taccf_max_sim = pd.read_csv('evaluation/dataset/taacf/output/mlsmr_taacf_max_similarities.csv')
 
 print("############ Pooled mlsmr-taacf Intra-Dataset Similarity ############")
 print(f'Number of molecules in pooled mlsmr and taacf dataset: {len(mlsmr_taccf_max_sim)}')
