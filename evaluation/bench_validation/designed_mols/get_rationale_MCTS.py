@@ -492,7 +492,7 @@ if __name__ == "__main__":
     ### variables
     model_path = "data/model_checkpoints/classifier_checkpoints/CompoundFragment_inclusive_with_antibiotics_evidential_classification_0.2_output/fold_0/model_0/model.pt"
     save_dir = "evaluation/bench_validation/designed_mols/output/pipeline_prediction/"
-    # smiles = "CCCc1ccc(Oc2ccc(C(=O)N3C4CCC3CC(N(C)C)C4)cc2)cc1" 
+    # smiles = ""  # proprietary molecule SMILES removed
 
     ### params for rationale search
 

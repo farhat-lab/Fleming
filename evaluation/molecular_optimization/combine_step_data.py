@@ -16,7 +16,7 @@ step3_seed_data['group'] = 'Step 3 Generated Siblings'
 step4_seed_data = pd.read_csv('data/output/dragonfold/leadlike/molecular_optimization_result/sibling_dict_step4.csv')
 step4_seed_data['group'] = 'Step 4 Generated Siblings'
 
-selected_molecule = 'CN(C)Cc1ccc(N(C)CCN(C)CC(=O)Nc2nc3ccc(OCCCN4CCCC4)cc3s2)nc1'
+selected_molecule = ''  # proprietary molecule SMILES removed
 selected_molecule = pd.DataFrame([selected_molecule], columns = ['SMILES'])
 selected_molecule['group'] = 'Final Optimized Molecule'
 num_step = 4
