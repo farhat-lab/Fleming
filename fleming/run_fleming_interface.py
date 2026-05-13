@@ -6,6 +6,8 @@ import queue
 sys.stdout.flush()
 import spaces
 import gradio as gr
+from gradio_client import utils as gradio_client_utils
+from fastapi.templating import Jinja2Templates
 import os
 from PIL import Image
 import base64
@@ -21,6 +23,47 @@ from utils.automatic_mode_utils import Batch_Mode_Utils
 import pandas as pd
 
 os.environ["VLLM_USE_V1"] = "0" # Disable v1 API for now since it does not support logits processors.
+
+
+def _patch_gradio_bool_schema_bug():
+    """Work around gradio_client 1.3.0 failing on boolean JSON schema nodes."""
+    original = gradio_client_utils._json_schema_to_python_type
+    if getattr(original, "_fleming_bool_schema_patch", False):
+        return
+
+    def patched(schema, defs=None):
+        if isinstance(schema, bool):
+            return "Any" if schema else "None"
+        return original(schema, defs)
+
+    patched._fleming_bool_schema_patch = True
+    gradio_client_utils._json_schema_to_python_type = patched
+
+
+_patch_gradio_bool_schema_bug()
+
+
+def _patch_template_response_signature():
+    """Allow Gradio's older TemplateResponse call style on newer Starlette."""
+    original = Jinja2Templates.TemplateResponse
+    if getattr(original, "_fleming_signature_patch", False):
+        return
+
+    def patched(self, *args, **kwargs):
+        if len(args) >= 2 and isinstance(args[0], str) and isinstance(args[1], dict):
+            context = dict(args[1])
+            request = context.get("request")
+            remaining = args[2:]
+            if request is None:
+                raise ValueError("Template context must include `request`.")
+            return original(self, request, args[0], context, *remaining, **kwargs)
+        return original(self, *args, **kwargs)
+
+    patched._fleming_signature_patch = True
+    Jinja2Templates.TemplateResponse = patched
+
+
+_patch_template_response_signature()
 
 # Determine the directory where the current file is located
 current_dir = os.path.dirname(os.path.abspath(__file__))
