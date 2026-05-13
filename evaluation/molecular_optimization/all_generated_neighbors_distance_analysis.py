@@ -32,7 +32,7 @@ for step in range(1,6):
 
     steps_df = steps_df.dropna().drop_duplicates().reset_index(drop=True)
 
-    # print(steps_df[steps_df['original_seed']=='CCCCc1ccc(N(C)CCCC2CCCC2)cc1'])
+    # print(steps_df[steps_df['original_seed']==''])  # proprietary molecule SMILES removed
         
     # Similarity to original seed
     sim_list = []
