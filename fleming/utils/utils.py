@@ -34,7 +34,7 @@ import multiprocessing # Added import
 from utils.pqa_agent import PQA_Agent
 
 from prompts import *
-
+MODEL='gpt-5.4-mini'
 # Add external_tools to path to allow importing sascore and scscore
 # This file is in utils/, and external_tools is in utils/external_tools
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -635,7 +635,7 @@ class Basic_Agent(PQA_Agent):
         # Use the OpenAI API to perform the literature review
         client = OpenAI(api_key=self.openai_api_key)
         response = client.responses.create(
-            model="gpt-5",
+            model=MODEL,
             input=question,
             tools=[{
                 "type": "web_search_preview",
@@ -652,7 +652,7 @@ class Basic_Agent(PQA_Agent):
             client = OpenAI(api_key=self.openai_api_key)
             question = question + "Make sure to return citations and the working link to the sources"
             response = client.responses.create(
-                model="gpt-5",
+                model=MODEL,
                 input=question,
                 tools=[
                     {"type": "web_search_preview",
@@ -673,7 +673,7 @@ class Basic_Agent(PQA_Agent):
             return f"Unable to complete literature review for: {question}. Error: {error_msg}. The agent should proceed with available information or try alternative approaches."
     
   
-    def llm_infer(self, conversation, temp = 0.000000001, max_tokens = 1000, image = None, role = None, openai_backend = 'openai', model ='gpt-5', reasoning_effort=None):
+    def llm_infer(self, conversation, temp = 0.000000001, max_tokens = 1000, image = None, role = None, openai_backend = 'openai', model =MODEL, reasoning_effort=None):
 
         while True:
             # Measure input size
@@ -930,7 +930,7 @@ class Basic_Agent(PQA_Agent):
                     "content": prompt
                 }
             ]
-            description = self.llm_infer(messages, model='gpt-5') 
+            description = self.llm_infer(messages, model=MODEL) 
             all_descriptions.append(f"Molecule {i+1} ({smiles}): {description}")
         
         return "\n\n".join(all_descriptions)
