@@ -174,8 +174,8 @@ class Basic_Agent(PQA_Agent):
 
         # Get paths from config if available, otherwise use defaults
         # Note: self.config is available in Basic_Agent
-        novelty_train_data = self.config.get('novelty_train_data', "agent_files/train_data.csv")
-        chembl_antibiotics_data = self.config.get('chembl_antibiotics_data', "agent_files/chembl_antibiotics.csv")
+        novelty_train_data = self.config.get('novelty_train_data', "data/train_data.csv")
+        chembl_antibiotics_data = self.config.get('chembl_antibiotics_data', "data/chembl_antibiotics.csv")
 
         paths_to_try = [
             os.path.join(project_root, novelty_train_data),
