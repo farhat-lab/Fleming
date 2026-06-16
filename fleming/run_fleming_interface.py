@@ -777,7 +777,7 @@ conversation_state = gr.State([])
 disclaimer_text = """
 **Disclaimer:** Fleming is a living tool in active development.
 """
-with gr.Blocks(css=css) as demo:
+with gr.Blocks() as demo:
     gr.Markdown(DESCRIPTION)
 
     # --- Main Application Screen ---
@@ -808,19 +808,15 @@ with gr.Blocks(css=css) as demo:
             with gr.Column(scale=3):
                 chatbot = gr.Chatbot(
                     height=400, 
-                    placeholder="<div style='text-align: center; padding: 20px; opacity: 0.68;'>Fleming will answer here with recommendations, tradeoffs, and next-step suggestions.</div>",
-                    label='Main Conversation', 
-                    type="messages", 
-                    show_copy_button=True
+                    placeholder="Fleming will answer here with recommendations, tradeoffs, and next-step suggestions.",
+                    label='Main Conversation'
                 )
             
             with gr.Column(scale=3):
                 inner_chatbot = gr.Chatbot(
                     height=400,
-                    placeholder="<div style='text-align: center; padding: 20px; opacity: 0.68;'>Optional audit trail: tool calls, intermediate checks, and molecule-display events appear here.</div>",
-                    label="Fleming's Inner Thoughts (Optional)",
-                    type="messages",
-                    show_copy_button=True
+                    placeholder="Optional audit trail: tool calls, intermediate checks, and molecule-display events appear here.",
+                    label="Fleming's Inner Thoughts (Optional)"
                 )
             
             with gr.Column(scale=2):
@@ -1295,6 +1291,6 @@ if __name__ == "__main__":
                 "Set AUTH0_DOMAIN, AUTH0_CLIENT_ID, AUTH0_CLIENT_SECRET, AUTH0_SECRET_KEY to enable.",
                 flush=True,
             )
-        _, local_url, share_url = demo.launch(share=True, server_name="0.0.0.0")
+        _, local_url, share_url = demo.launch(share=True, server_name="0.0.0.0", css=css)
         print("Gradio local URL:", local_url, flush=True)
         print("Gradio share URL:", share_url, flush=True)
