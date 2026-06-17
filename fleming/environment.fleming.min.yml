@@ -1,0 +1,26 @@
+name: fleming
+channels:
+  - conda-forge
+  - pytorch
+  - defaults
+dependencies:
+  - python=3.14
+  - pip
+  - numpy
+  - pandas
+  - rdkit
+  - pytorch
+  - torchvision
+  - torchaudio
+  #- cudatoolkit=11.8  # Remove or comment out if no GPU
+  - pip:
+    - gradio
+    - openai
+    - pyyaml
+    - requests
+    - tqdm
+    - scikit-learn
+    - matplotlib
+    - seaborn
+    - admet-ai
+    - dotenv
