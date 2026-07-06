@@ -43,7 +43,7 @@ Fleming is a multi-agent system designed for pharmaceutical sciences, capable of
 
 2.  **Edit `config.yaml`:**
     - Add your **OpenAI API Key** (or Azure configuration).
-    - Add your **PQApi Token** (if using Pharmacist Quality features).
+    - Add your **PQApi Token** .
     - Verify paths for models and data files.
 
 ### 4. Running Fleming
@@ -55,6 +55,37 @@ python run_fleming_interface.py
 ```
 
 By default the UI uses the legacy backend (`main_fleming.Fleming`). If you still have the optional SDK backend available, you can select it with `FLEMING_BACKEND=sdk`.
+
+To run the automatic CSV pipeline from the command line:
+
+```bash
+python run_fleming_batch_cli.py path/to/input.csv
+```
+
+The CSV must include a `SMILES` column. By default this runs `ranking`, `optimization`, and `plausibility`, then writes:
+
+- `<input>_fleming_results.csv`
+- step-specific files such as `<input>_fleming_results_ranking_results.csv`
+
+Example with explicit output and step control:
+
+```bash
+python run_fleming_batch_cli.py data/molecules.csv \
+  --output outputs/molecules_ranked.csv \
+  --steps ranking optimization \
+  --top-n-to-optimize 50
+```
+
+### Containerized interface-only environment
+
+If you only need to run `run_fleming_interface.py` and do not need the diffusion stack or ChemMCP/chemtools, use the environment-only container recipe under [docker/interface/README.md](/n/data1/hms/dbmi/farhat/anz226/Fleming/fleming/docker/interface/README.md).
+
+That workflow:
+
+- targets O2-style `Singularity` / `Apptainer` usage
+- stores the built `.sif` in `/n/scratch/users/a/anz226/`
+- keeps the Fleming source tree, model checkpoints, and `config.yaml` outside the image
+- runs the app by bind-mounting the repo into the container at runtime
 
 ## 🧩 External Tools & Models
 
