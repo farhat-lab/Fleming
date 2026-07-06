@@ -802,7 +802,7 @@ with gr.Blocks() as demo:
         gr.Markdown("""On the **left** is the working conversation with Fleming. In the **middle** you can inspect tool use and intermediate reasoning. On the **right** any molecules Fleming highlights will be rendered so you can compare structures visually.""")
         gr.Markdown("For batch ranking, upload a CSV with a single `SMILES` column.")
         csv_upload = gr.File(label="Upload SMILES CSV", file_types=[".csv"])
-        use_synspace_checkbox = gr.Checkbox(label="Use Synspace for Neighbors", value=False)
+        use_synspace_checkbox = gr.Checkbox(label="Use Synspace for Neighbors", value=True)
 
         with gr.Row():
             with gr.Column(scale=3):
