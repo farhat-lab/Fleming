@@ -123,10 +123,6 @@ def display_image(image_path):
 DESCRIPTION = f'''
 <div style="text-align: center;">
   <h1 style="font-size: 32px; margin-bottom: 10px;">Fleming: An AI Agent for Drug-Discovery in Tuberculosis</h1>
-  <p style="font-size: 18px; opacity: 0.78; max-width: 900px; margin: 0 auto;">
-    A medicinal-chemistry copilot for screening, optimization, and molecule-level reasoning.
-    Ask for inhibition estimates, ADMET tradeoffs, analog ideas, or concrete next-step suggestions.
-  </p>
 </div>
 '''
 INTRO = """
@@ -172,58 +168,62 @@ h1 {
     margin-bottom: 0px !important;
 }
 
-/* Disabled button styling */
+/* Disabled button styling - uses theme variables so it reads correctly in both light and dark mode */
 button[disabled], button:disabled {
-    opacity: 0.5 !important;
+    opacity: 0.7 !important;
     cursor: not-allowed !important;
-    background-color: #f5f5f5 !important;
-    color: #9ca3af !important;
-    border-color: #d1d5db !important;
+    background: var(--background-fill-secondary) !important;
+    color: var(--body-text-color-subdued) !important;
+    border-color: var(--border-color-primary) !important;
 }
 
 /* Make sure disabled buttons are clearly grayed out */
 .gr-button[disabled] {
-    opacity: 0.4 !important;
+    opacity: 0.7 !important;
     pointer-events: none !important;
 }
 
-/* Processing animation */
-@keyframes pulse {
-    0% { opacity: 1; }
-    50% { opacity: 0.6; }
-    100% { opacity: 1; }
+/* --- Mode selection screen --- */
+.mode-card {
+    border: 1px solid var(--border-color-primary) !important;
+    border-radius: 8px !important;
+    padding: 24px !important;
+    background: var(--background-fill-secondary) !important;
+    transition: border-color 0.15s ease;
 }
 
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+.mode-card:hover {
+    border-color: #3b82f6 !important;
 }
 
-.processing-indicator {
-    animation: pulse 1.5s ease-in-out infinite;
-    background: linear-gradient(45deg, #3b82f6, #1d4ed8) !important;
-    color: white !important;
+.mode-card h3 {
+    margin-top: 0 !important;
+    font-size: 18px !important;
+    font-weight: 600 !important;
 }
 
-.processing-spinner::before {
-    content: "⚙️ ";
-    display: inline-block;
-    animation: spin 2s linear infinite;
-    margin-right: 8px;
+.back-button button {
+    font-size: 13px !important;
+    opacity: 0.8;
 }
 
-/* Loading dots animation */
-@keyframes loading-dots {
-    0%, 20% { content: "Processing"; }
-    40% { content: "Processing."; }
-    60% { content: "Processing.."; }
-    80%, 100% { content: "Processing..."; }
+/* Chat input row - anchored to the bottom of the conversation column and highlighted
+   so it reads clearly as the primary place to start interacting with Fleming. */
+.chat-input-row {
+    border: 1px solid #3b82f6 !important;
+    border-radius: 8px !important;
+    padding: 4px !important;
+    margin-top: 8px !important;
+    background: var(--background-fill-secondary) !important;
 }
 
-.loading-text::after {
-    content: "";
-    animation: loading-dots 2s infinite;
+.chat-input-row textarea, .chat-input-row input {
+    border: none !important;
+    background: transparent !important;
 }
+"""
+
+css += """
 
 /* Custom animated progress bar */
 #progress-display-container .progress-wrapper {
@@ -233,7 +233,7 @@ button[disabled], button:disabled {
 
 #progress-display-container .progress-container {
     width: 100%;
-    background-color: #e5e7eb;
+    background-color: var(--border-color-primary);
     border-radius: 9999px;
     height: 8px;
     overflow: hidden;
@@ -248,21 +248,21 @@ button[disabled], button:disabled {
     transition: width 0.2s ease-in-out;
     background-image: linear-gradient(
         45deg,
-        rgba(255, 255, 255, 0.15) 25%,
+        rgba(255, 255, 255, 0.1) 25%,
         transparent 25%,
         transparent 50%,
-        rgba(255, 255, 255, 0.15) 50%,
-        rgba(255, 255, 255, 0.15) 75%,
+        rgba(255, 255, 255, 0.1) 50%,
+        rgba(255, 255, 255, 0.1) 75%,
         transparent 75%,
         transparent
     );
-    background-size: 40px 40px;
-    animation: progress-bar-stripes 2s linear infinite;
+    background-size: 32px 32px;
+    animation: progress-bar-stripes 3.5s linear infinite;
 }
 
 @keyframes progress-bar-stripes {
     from {
-        background-position: 40px 0;
+        background-position: 32px 0;
     }
     to {
         background-position: 0 0;
@@ -274,18 +274,33 @@ button[disabled], button:disabled {
     bottom: 0;
     right: 0;
     font-size: 12px;
-    color: #888;
+    color: var(--body-text-color-subdued);
 }
 
 .chat-timer {
     text-align: center !important;
-    color: #888 !important;
+    color: var(--body-text-color-subdued) !important;
     font-size: 14px !important;
     padding-top: 5px !important;
 }
-"""
 
-chat_css = """
+/* Plan & status panel (middle column, above the progress trace) - theme-aware so it stays readable in dark mode */
+#plan-display-container {
+    background-color: var(--background-fill-secondary) !important;
+    border: 1px solid var(--border-color-primary) !important;
+    border-left: 4px solid #3b82f6 !important;
+    border-radius: 8px !important;
+    padding: 10px 14px !important;
+    margin-bottom: 10px !important;
+    color: var(--body-text-color) !important;
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+#plan-display-container * {
+    color: inherit !important;
+}
+
 .gr-button { font-size: 20px !important; }  /* Enlarges button icons */
 .gr-button svg { width: 32px !important; height: 32px !important; } /* Enlarges SVG icons */
 
@@ -300,17 +315,22 @@ chat_css = """
 
 /* SMILES code styling */
 .chatbot code {
-    background-color: #f0f8ff !important;
+    background-color: var(--background-fill-secondary) !important;
     padding: 2px 6px !important;
     border-radius: 4px !important;
     font-family: 'Courier New', monospace !important;
     color: #2563eb !important;
 }
 
-/* Molecule gallery styling */
+.dark .chatbot code {
+    color: #60a5fa !important;
+}
+
+/* Molecule gallery styling - theme-aware container; structure images themselves keep their white
+   drawing canvas from RDKit, which reads fine on either a light or dark card background. */
 #molecule-gallery {
-    background: #f8fafc !important;
-    border: 1px solid #e2e8f0 !important;
+    background: var(--background-fill-secondary) !important;
+    border: 1px solid var(--border-color-primary) !important;
     border-radius: 8px !important;
     padding: 10px !important;
 }
@@ -318,7 +338,8 @@ chat_css = """
 #molecule-gallery .gallery-item {
     border-radius: 6px !important;
     overflow: hidden !important;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15) !important;
+    background: #ffffff !important;
 }
 
 #molecule-gallery img {
@@ -329,14 +350,12 @@ chat_css = """
 
 /* Molecule section styling */
 .chatbot .detected-molecules {
-    background-color: #f8fafc !important;
+    background-color: var(--background-fill-secondary) !important;
     border-left: 4px solid #3b82f6 !important;
     padding: 12px !important;
     margin: 10px 0 !important;
     border-radius: 0 8px 8px 0 !important;
 }
-
-
 """
 
 model_name = ''
@@ -439,6 +458,10 @@ _is_processing = False
 _active_request_signature = None
 _last_completed_request_signature = None
 _last_completed_request_time = 0.0
+# Monotonically increasing counter identifying the "current" request. Used so that a stale
+# (already-interrupted) request's cleanup code can never clobber the state of a newer request
+# that has since started - see custom_chat_handler / agent_thread_func below.
+_request_generation = 0
 
 # Initialize interruption flags only for instantiated backends.
 for fleming_instance in [inst for inst in [fleming_real, fleming_sdk] if inst is not None]:
@@ -769,7 +792,7 @@ def reset_conversation():
         traceback.print_exc()
     
     # Return empty chatbot history, empty conversation state, empty molecules, re-enabled buttons
-    return [], [], [], gr.update(interactive=True, value="Send"), gr.update(interactive=True, value="🗑️ Reset Conversation")
+    return [], [], [], gr.update(interactive=True, value="Send"), gr.update(interactive=True, value="Reset Conversation")
 
 conversation_state = gr.State([])
 
@@ -777,50 +800,82 @@ conversation_state = gr.State([])
 disclaimer_text = """
 **Disclaimer:** Fleming is a living tool in active development.
 """
-with gr.Blocks() as demo:
+with gr.Blocks(css=css, theme=gr.themes.Soft(primary_hue="blue", neutral_hue="slate")) as demo:
     gr.Markdown(DESCRIPTION)
 
-    # --- Main Application Screen ---
-    with gr.Column(visible=True) as main_app_group:
-        progress_display = gr.HTML("<div class='progress-wrapper'><div class='progress-container'><div class='progress-bar'></div></div><div class='timer-text'></div></div>", visible=False, elem_id="progress-display-container")
-
-        with gr.Accordion("Current Plan & Status", open=True, visible=False) as plan_accordion:
-            plan_display = gr.Markdown("Waiting for plan...")
-
-        with gr.Row():
-            with gr.Column(scale=9):
-                msg_input = gr.Textbox(
-                    placeholder="Ask Fleming to analyze, compare, optimize, or generate TB-focused molecules...",
-                    show_label=False,
-                    scale=1
+    # --- Mode Selection Screen ---
+    with gr.Column(visible=True) as mode_selection_group:
+        gr.Markdown("## How would you like to work with Fleming today?")
+        with gr.Row(equal_height=True):
+            with gr.Column(elem_classes=["mode-card"]):
+                gr.Markdown("### Batch Mode")
+                gr.Markdown(
+                    "Upload a CSV of SMILES strings for deterministic, large-scale ranking, "
+                    "optimization, and plausibility screening — no chat required. Best for "
+                    "**10 or more molecules** at once. Batch mode was used to generate the antibiotic candidates that were validated in vitro"
                 )
-            with gr.Column(scale=1):
-                send_btn = gr.Button("Send", variant="primary", scale=1)
-            with gr.Column(scale=1):
-                reset_btn = gr.Button("🗑️ Reset", variant="secondary", scale=1)
+                batch_mode_btn = gr.Button("Enter Batch Mode", variant="primary", size="lg")
+            with gr.Column(elem_classes=["mode-card"]):
+                gr.Markdown("### Copilot Mode")
+                gr.Markdown(
+                    "Chat with Fleming directly. Ask for inhibition estimates, ADMET tradeoffs, "
+                    "analog ideas, optimization, or molecule generation, and watch its plan and "
+                    "reasoning as it works. Best for **fewer than 10 molecules** at a time."
+                )
+                copilot_mode_btn = gr.Button("Enter Copilot Mode", variant="primary", size="lg")
 
-        gr.Markdown("""On the **left** is the working conversation with Fleming. In the **middle** you can inspect tool use and intermediate reasoning. On the **right** any molecules Fleming highlights will be rendered so you can compare structures visually.""")
-        gr.Markdown("For batch ranking, upload a CSV with a single `SMILES` column.")
-        csv_upload = gr.File(label="Upload SMILES CSV", file_types=[".csv"])
-        use_synspace_checkbox = gr.Checkbox(label="Use Synspace for Neighbors", value=True)
+    # --- Copilot (Chat) Screen ---
+    with gr.Column(visible=False) as copilot_group:
+        back_to_modes_btn = gr.Button("Back to mode selection", size="sm", elem_classes=["back-button"])
+        pending_message_buffer = gr.Textbox(value="", visible=False, show_label=False)
+        no_csv_state = gr.State(None)
+
+        gr.Markdown("""On the **left** is the working conversation with Fleming - type your question in the box at the bottom of that column to get started. In the **middle** you can review its plan and inspect tool use and intermediate reasoning as it works. On the **right** any molecules Fleming highlights will be rendered so you can compare structures visually.""")
+        use_synspace_checkbox = gr.Checkbox(label="Use Synspace for Neighbors", value=False)
 
         with gr.Row():
             with gr.Column(scale=3):
                 chatbot = gr.Chatbot(
                     height=400, 
                     placeholder="Fleming will answer here with recommendations, tradeoffs, and next-step suggestions.",
-                    label='Main Conversation'
+                    label='Main Conversation',
+                    type="messages"
                 )
-            
+                with gr.Row(elem_classes=["chat-input-row"]):
+                    msg_input = gr.Textbox(
+                        placeholder="Start here: ask Fleming to analyze, compare, optimize, or generate TB-focused molecules...",
+                        show_label=False,
+                        scale=8,
+                        autofocus=True,
+                    )
+                    send_btn = gr.Button("Send", variant="primary", scale=1, min_width=80)
+                reset_btn = gr.Button("Reset Conversation", variant="secondary", size="sm")
+
             with gr.Column(scale=3):
-                inner_chatbot = gr.Chatbot(
-                    height=400,
-                    placeholder="Optional audit trail: tool calls, intermediate checks, and molecule-display events appear here.",
-                    label="Fleming's Inner Thoughts (Optional)"
-                )
+                with gr.Group():
+                    gr.Markdown("#### Plan")
+                    plan_display = gr.Markdown(
+                        "Waiting for plan...",
+                        visible=False,
+                        elem_id="plan-display-container",
+                    )
+                with gr.Group():
+                    gr.Markdown("#### Progress & Reasoning")
+                    progress_display = gr.HTML(
+                        "<div class='progress-wrapper'><div class='progress-container'><div class='progress-bar'></div></div><div class='timer-text'></div></div>",
+                        visible=False,
+                        elem_id="progress-display-container"
+                    )
+                    inner_chatbot = gr.Chatbot(
+                        height=340,
+                        placeholder="Optional audit trail: tool calls, intermediate checks, and molecule-display events appear here.",
+                        label="Tool Calls & Reasoning",
+                        type="messages",
+                        show_label=False,
+                    )
             
             with gr.Column(scale=2):
-                gr.Markdown("### Detected Molecules")
+                gr.Markdown("### Relevant Molecules")
                 gr.Markdown("*New molecules appear first*")
                 molecule_gallery = gr.Gallery(
                     label="Molecule Structures",
@@ -836,10 +891,50 @@ with gr.Blocks() as demo:
         with gr.Accordion("", open=True):
             gr.Markdown("""**Limitations:** Fleming is a research product. Its main capabilities are built around predicting molecular properties (inhibition, ADMET, druglikeness, etc.). While Fleming has advanced literature review capabilities to supplement its main tools, there are certain areas where it does not perform well. Notably, Fleming is not scoped to understand the mechanism of action of molecules.""")
 
-        with gr.Accordion("Batch Processing", open=False):
-            batch_summary_display = gr.Markdown("Batch processing status will appear here.")
-            batch_dataframe_display = gr.DataFrame(visible=False, label="Batch Results")
-            download_csv_button = gr.File(label="Download Ranked CSV", visible=False)
+    # --- Batch Mode Screen ---
+    with gr.Column(visible=False) as batch_group:
+        back_to_modes_btn_batch = gr.Button("Back to mode selection", size="sm", elem_classes=["back-button"])
+        gr.Markdown("## Batch Mode")
+        gr.Markdown(
+            "Upload a CSV of molecules. Fleming will deterministically rank "
+            "molecules by predicted TB inhibition and ADMET, optionally generate optimized analogs "
+            "for the top candidates, and run a plausibility check on the best results — this pipeline "
+            "runs directly without an LLM driving each step."
+        )
+        with gr.Group():
+            gr.Markdown(
+                "**CSV requirements:**\n"
+                "- Must contain a column named exactly `SMILES` (case-sensitive). Any other columns are ignored.\n"
+                "- One valid SMILES string per row.\n"
+                "- File must be `.csv` format, comma-separated, with a header row.\n"
+                "- Duplicate SMILES are automatically removed. Rows with invalid/unparseable SMILES may fail "
+                "during scoring, so please double-check your SMILES are valid before uploading.\n\n"
+                "Example:\n"
+                "```\n"
+                "SMILES\n"
+                "CCO\n"
+                "c1ccccc1\n"
+                "CC(=O)Oc1ccccc1C(=O)O\n"
+                "```"
+            )
+        batch_csv_upload = gr.File(label="Upload SMILES CSV", file_types=[".csv"])
+        batch_steps_checkboxes = gr.CheckboxGroup(
+            choices=["Ranking (Inhibition + ADMET)", "Optimization", "Plausibility Check"],
+            value=["Ranking (Inhibition + ADMET)", "Optimization", "Plausibility Check"],
+            label="Pipeline steps to run",
+        )
+        with gr.Row():
+            batch_top_n_optimize = gr.Number(value=100, precision=0, minimum=1, label="Top N molecules to optimize")
+            batch_top_n_plausibility = gr.Number(value=100, precision=0, minimum=1, label="Top N molecules for plausibility check")
+        run_batch_btn = gr.Button("Run Batch Analysis", variant="primary", size="lg")
+        batch_progress_display = gr.HTML(
+            "<div class='progress-wrapper'><div class='progress-container'><div class='progress-bar'></div></div><div class='timer-text'></div></div>",
+            visible=False,
+            elem_id="progress-display-container"
+        )
+        batch_summary_display = gr.Markdown("Batch processing status will appear here.")
+        batch_dataframe_display = gr.DataFrame(visible=False, label="Batch Results")
+        download_csv_button = gr.File(label="Download Ranked CSV", visible=False)
 
     gr.Markdown(LICENSE)
 
@@ -912,8 +1007,11 @@ with gr.Blocks() as demo:
     def custom_chat_handler(message, history, inner_history, current_gallery, uploaded_csv, use_synspace):
         global _is_processing, all_displayed_smiles
         global _active_request_signature, _last_completed_request_signature, _last_completed_request_time
+        global _request_generation
         import time
         start_time = time.time()
+        max_inner_history = 80
+        generator_closing = False
         
         current_fleming = get_current_fleming(uploaded_csv)
         uploaded_csv_name = getattr(uploaded_csv, "name", None) if uploaded_csv else None
@@ -959,7 +1057,7 @@ with gr.Blocks() as demo:
             print("🚫 Duplicate request ignored immediately after completion.")
             yield (
                 history, inner_history, current_gallery,
-                gr.update(interactive=True, value="Send"), gr.update(interactive=True, value="🗑️ Reset Conversation"),
+                gr.update(interactive=True, value="Send"), gr.update(interactive=True, value="Reset Conversation"),
                 gr.update(visible=False),
                 batch_summary, gr.update(value=batch_df_value, visible=batch_df_visible),
                 gr.update(value=download_path, visible=download_visible),
@@ -971,7 +1069,7 @@ with gr.Blocks() as demo:
             # Return current state if message is empty
             yield (
                 history, inner_history, current_gallery, 
-                gr.update(interactive=True, value="Send"), gr.update(interactive=True, value="🗑️ Reset Conversation"), 
+                gr.update(interactive=True, value="Send"), gr.update(interactive=True, value="Reset Conversation"), 
                 gr.update(visible=False),
                 batch_summary, gr.update(value=batch_df_value, visible=batch_df_visible),
                 gr.update(value=download_path, visible=download_visible),
@@ -981,27 +1079,79 @@ with gr.Blocks() as demo:
 
         _is_processing = True
         _active_request_signature = request_signature
+        _request_generation += 1
+        my_generation = _request_generation
         mode_name = "Fleming SDK" if current_fleming is fleming_sdk else "Fleming"
         print(f"🔄 Starting request processing with {mode_name}")
         
         main_chat_history = list(history)
         inner_chat_history = list(inner_history)
         accumulated_molecules = list(current_gallery) if current_gallery is not None else []
-        
 
-        html_content = "<div class='progress-wrapper'><div class='progress-container'><div class='progress-bar' style='width: 0%;'></div></div><div class='timer-text'>0s / 300s</div></div>"
-        yield (
-            main_chat_history, inner_chat_history, accumulated_molecules, 
-            gr.update(interactive=False, value="Processing..."), gr.update(interactive=False, value="🚫 Reset Disabled"), 
-            gr.update(visible=True, value=html_content),
-            batch_summary, gr.update(value=batch_df_value, visible=batch_df_visible),
-            gr.update(value=download_path, visible=download_visible),
-            gr.update(value=current_plan, visible=plan_visible)
+        def _append_unique_chat_message(chat_history, chat_message):
+            if not isinstance(chat_message, gr.ChatMessage):
+                chat_history.append(chat_message)
+                return True
+            if chat_history:
+                last_item = chat_history[-1]
+                if (
+                    isinstance(last_item, gr.ChatMessage)
+                    and getattr(last_item, "role", None) == getattr(chat_message, "role", None)
+                    and getattr(last_item, "content", None) == getattr(chat_message, "content", None)
+                ):
+                    return False
+            chat_history.append(chat_message)
+            return True
+
+        def _normalize_inner_chat_message(chat_message):
+            if not isinstance(chat_message, gr.ChatMessage):
+                return gr.ChatMessage(role="assistant", content=str(chat_message))
+            content = getattr(chat_message, "content", "")
+            role = getattr(chat_message, "role", "assistant")
+            if role != "assistant":
+                role = "assistant"
+            return gr.ChatMessage(role=role, content=content)
+
+        def _trim_inner_history():
+            nonlocal inner_chat_history
+            if len(inner_chat_history) > max_inner_history:
+                inner_chat_history = inner_chat_history[-max_inner_history:]
+
+        def _build_progress_html(elapsed_secs):
+            # Indeterminate bar (we don't know total task duration) - the CSS stripe animation
+            # conveys "in progress"; only the elapsed time is shown, with no artificial countdown.
+            timer_text = f"Working... {elapsed_secs}s elapsed"
+            return (
+                f"<div class='progress-wrapper'><div class='progress-container'>"
+                f"<div class='progress-bar' style='width: 100%;'></div></div>"
+                f"<div class='timer-text'>{timer_text}</div></div>"
+            )
+
+        def _ui_payload(progress_value):
+            return (
+                main_chat_history, inner_chat_history, accumulated_molecules,
+                gr.update(interactive=False, value="Processing..."), gr.update(interactive=False, value="🚫 Reset Disabled"),
+                gr.update(visible=True, value=progress_value),
+                batch_summary, gr.update(value=batch_df_value, visible=batch_df_visible),
+                gr.update(value=download_path, visible=download_visible),
+                gr.update(value=current_plan, visible=plan_visible)
+            )
+        
+        if message and message.strip():
+            _append_unique_chat_message(main_chat_history, gr.ChatMessage(role="user", content=message.strip()))
+        _append_unique_chat_message(
+            inner_chat_history,
+            gr.ChatMessage(role="assistant", content="[Fleming] Starting analysis and building plan...")
         )
+        _trim_inner_history()
+
+        html_content = _build_progress_html(0)
+        yield _ui_payload(html_content)
 
         result_queue = queue.Queue()
 
         def agent_thread_func():
+            agent_generator = None
             try:
                 if hasattr(current_fleming, '_interrupt_requested'):
                     current_fleming._interrupt_requested = False
@@ -1011,20 +1161,28 @@ with gr.Blocks() as demo:
                 )
 
                 for output in agent_generator:
-                    if not _is_processing:
-                        print("🚫 Processing interrupted, stopping agent generator")
+                    if not _is_processing or _request_generation != my_generation:
+                        print(f"🚫 Processing interrupted, stopping agent generator (generation {my_generation}, current {_request_generation})")
                         break
                     result_queue.put(output)
             except Exception as e:
                 result_queue.put(e)
             finally:
+                if agent_generator is not None:
+                    try:
+                        agent_generator.close()
+                    except Exception:
+                        pass
                 result_queue.put(None)  # Sentinel value
 
         thread = threading.Thread(target=agent_thread_func)
         thread.start()
 
         try:
+            last_progress_bucket = -1
+            last_render_signature = None
             while thread.is_alive() or not result_queue.empty():
+                state_changed = False
                 try:
                     output = result_queue.get_nowait()
 
@@ -1037,9 +1195,10 @@ with gr.Blocks() as demo:
                     panel, *data = output
                     
                     if panel == 'main':
-                        main_chat_history.append(data[0])
+                        state_changed = _append_unique_chat_message(main_chat_history, data[0]) or state_changed
                     elif panel == 'inner':
-                        inner_chat_history.append(data[0])
+                        state_changed = _append_unique_chat_message(inner_chat_history, _normalize_inner_chat_message(data[0])) or state_changed
+                        _trim_inner_history()
                     elif panel == 'molecules':
                         try:
                             items = data[0] if data else []
@@ -1070,6 +1229,7 @@ with gr.Blocks() as demo:
                                 accumulated_molecules = new_images + accumulated_molecules
                                 if len(accumulated_molecules) > 20:
                                     accumulated_molecules = accumulated_molecules[:20]
+                                state_changed = True
                         except Exception as e:
                             print(f"Error handling molecules payload: {e}")
                             continue
@@ -1078,12 +1238,15 @@ with gr.Blocks() as demo:
                         batch_summary = summary_update
                         batch_df_value = df_update
                         batch_df_visible = True
+                        state_changed = True
                     elif panel == 'download':
                         download_path = data[0]
                         download_visible = True
+                        state_changed = True
                     elif panel == 'plan':
                         current_plan = data[0]
                         plan_visible = True
+                        state_changed = True
                      
                     if panel in ['main', 'inner']:
                         content = data[0].content if hasattr(data[0], 'content') else str(data[0])
@@ -1105,63 +1268,232 @@ with gr.Blocks() as demo:
                                 accumulated_molecules = new_images + accumulated_molecules
                                 if len(accumulated_molecules) > 20:
                                     accumulated_molecules = accumulated_molecules[:20]
+                                state_changed = True
                 except queue.Empty:
-                    pass # No new data, just update timer
+                    pass
 
                 elapsed_secs = int(time.time() - start_time)
-                new_max = max(300, elapsed_secs + 5)
+                progress_bucket = elapsed_secs // 2
+                if state_changed or progress_bucket != last_progress_bucket:
+                    html_content = _build_progress_html(elapsed_secs)
+                    render_signature = (
+                        len(main_chat_history),
+                        len(inner_chat_history),
+                        len(accumulated_molecules),
+                        batch_summary,
+                        batch_df_visible,
+                        download_visible,
+                        current_plan,
+                        plan_visible,
+                        progress_bucket,
+                    )
+                    if render_signature != last_render_signature:
+                        last_render_signature = render_signature
+                        last_progress_bucket = progress_bucket
+                        yield _ui_payload(html_content)
 
-                progress_percentage = min((elapsed_secs / new_max) * 100, 100)
-                timer_text = f"{elapsed_secs}s / {new_max}s"
-                html_content = f"<div class='progress-wrapper'><div class='progress-container'><div class='progress-bar' style='width: {progress_percentage}%;'></div></div><div class='timer-text'>{timer_text}</div></div>"
-
-
-                yield (
-                    main_chat_history, inner_chat_history, accumulated_molecules, 
-                    gr.update(interactive=False, value="Processing..."), gr.update(interactive=False, value="🚫 Reset Disabled"), 
-                    gr.update(visible=True, value=html_content),
-                    batch_summary, gr.update(value=batch_df_value, visible=batch_df_visible),
-                    gr.update(value=download_path, visible=download_visible),
-                    gr.update(value=current_plan, visible=plan_visible)
-                )
-                
-                time.sleep(1)
+                time.sleep(0.25)
+        except GeneratorExit:
+            generator_closing = True
+            _is_processing = False
+            if hasattr(current_fleming, '_interrupt_requested'):
+                current_fleming._interrupt_requested = True
+            raise
         except Exception as e:
             print(f"Error in chat handler: {e}")
             import traceback
             traceback.print_exc()
-            inner_chat_history.append(gr.ChatMessage(role="system", content=f"An error occurred: {e}"))
+            _append_unique_chat_message(inner_chat_history, gr.ChatMessage(role="assistant", content=f"An error occurred: {e}"))
+            _trim_inner_history()
         
         finally:
-            _is_processing = False
+            # Only clear the shared processing state if a newer request hasn't already taken
+            # over in the meantime. Without this guard, a stale/interrupted request's cleanup
+            # could clobber `_is_processing`/`_active_request_signature` right out from under a
+            # newer, still-running request, causing it to spuriously self-interrupt.
+            if _request_generation == my_generation:
+                _is_processing = False
+                _active_request_signature = None
+                if hasattr(current_fleming, '_interrupt_requested'):
+                    current_fleming._interrupt_requested = False
             _last_completed_request_signature = request_signature
             _last_completed_request_time = time.time()
-            _active_request_signature = None
-            print("✅ Request processing completed")
-            if hasattr(current_fleming, '_interrupt_requested'):
-                current_fleming._interrupt_requested = False
-            
-            yield (
-                main_chat_history, inner_chat_history, accumulated_molecules, 
-                gr.update(interactive=True, value="Send"), gr.update(interactive=True, value="🗑️ Reset Conversation"), 
-                gr.update(visible=False),
-                batch_summary, gr.update(value=batch_df_value, visible=batch_df_visible),
-                gr.update(value=download_path, visible=download_visible),
-                gr.update(value=current_plan, visible=plan_visible)
+            print(f"✅ Request processing completed (generation {my_generation}, current {_request_generation})")
+
+            if not generator_closing:
+                yield (
+                    main_chat_history, inner_chat_history, accumulated_molecules,
+                    gr.update(interactive=True, value="Send"), gr.update(interactive=True, value="Reset Conversation"),
+                    gr.update(visible=False),
+                    batch_summary, gr.update(value=batch_df_value, visible=batch_df_visible),
+                    gr.update(value=download_path, visible=download_visible),
+                    gr.update(value=current_plan, visible=plan_visible)
+                )
+
+    # --- Mode Selection Navigation ---
+    def _enter_copilot_mode():
+        return gr.update(visible=False), gr.update(visible=True), gr.update(visible=False)
+
+    def _enter_batch_mode():
+        return gr.update(visible=False), gr.update(visible=False), gr.update(visible=True)
+
+    def _back_to_mode_selection():
+        return gr.update(visible=True), gr.update(visible=False), gr.update(visible=False)
+
+    _mode_group_outputs = [mode_selection_group, copilot_group, batch_group]
+    copilot_mode_btn.click(_enter_copilot_mode, outputs=_mode_group_outputs)
+    batch_mode_btn.click(_enter_batch_mode, outputs=_mode_group_outputs)
+    back_to_modes_btn.click(_back_to_mode_selection, outputs=_mode_group_outputs)
+    back_to_modes_btn_batch.click(_back_to_mode_selection, outputs=_mode_group_outputs)
+
+    # --- Batch Mode Handler ---
+    _BATCH_STEP_LABEL_TO_KEY = {
+        "Ranking (Inhibition + ADMET)": "ranking",
+        "Optimization": "optimization",
+        "Plausibility Check": "plausibility",
+    }
+
+    def run_batch_mode_handler(csv_file, selected_steps, top_n_optimize, top_n_plausibility):
+        """
+        Runs the deterministic batch pipeline directly (no LLM/chat loop involved) and streams
+        progress back to the Batch Mode screen.
+        """
+        import time as _time
+
+        def _progress_html(elapsed_secs):
+            return (
+                f"<div class='progress-wrapper'><div class='progress-container'>"
+                f"<div class='progress-bar' style='width: 100%;'></div></div>"
+                f"<div class='timer-text'>Working... {elapsed_secs}s elapsed</div></div>"
             )
 
-    # --- Event Listeners ---
+        if csv_file is None:
+            yield (
+                "Please upload a CSV file with a `SMILES` column before running.",
+                gr.update(value=None, visible=False),
+                gr.update(value=None, visible=False),
+                gr.update(interactive=True, value="Run Batch Analysis"),
+                gr.update(visible=False),
+            )
+            return
+
+        steps_to_run = [_BATCH_STEP_LABEL_TO_KEY[s] for s in (selected_steps or []) if s in _BATCH_STEP_LABEL_TO_KEY]
+        if not steps_to_run:
+            steps_to_run = ["ranking"]
+
+        current_fleming = get_current_fleming(csv_file)
+        csv_path = getattr(csv_file, "name", csv_file)
+
+        start_time = _time.time()
+        result_queue = queue.Queue()
+
+        def batch_thread_func():
+            try:
+                generator = current_fleming.batchmode_provided_csv(
+                    csv_path=csv_path,
+                    steps_to_run=steps_to_run,
+                    top_n_to_optimize=int(top_n_optimize or 100),
+                    top_n_to_plausibility=int(top_n_plausibility or 100),
+                )
+                for item in generator:
+                    result_queue.put(item)
+            except Exception as exc:
+                result_queue.put(exc)
+            finally:
+                result_queue.put(None)
+
+        thread = threading.Thread(target=batch_thread_func)
+        thread.start()
+
+        batch_summary = "Starting batch processing..."
+        batch_df_value = None
+        batch_df_visible = False
+        download_path = None
+        download_visible = False
+
+        yield (
+            batch_summary,
+            gr.update(value=batch_df_value, visible=batch_df_visible),
+            gr.update(value=download_path, visible=download_visible),
+            gr.update(interactive=False, value="Processing..."),
+            gr.update(value=_progress_html(0), visible=True),
+        )
+
+        while thread.is_alive() or not result_queue.empty():
+            try:
+                item = result_queue.get(timeout=0.25)
+            except queue.Empty:
+                elapsed = int(_time.time() - start_time)
+                yield (
+                    batch_summary,
+                    gr.update(value=batch_df_value, visible=batch_df_visible),
+                    gr.update(value=download_path, visible=download_visible),
+                    gr.update(interactive=False, value="Processing..."),
+                    gr.update(value=_progress_html(elapsed), visible=True),
+                )
+                continue
+
+            if item is None:
+                break
+            if isinstance(item, Exception):
+                batch_summary = f"Batch processing failed: {item}"
+                break
+
+            if isinstance(item, tuple) and len(item) == 2 and isinstance(item[0], pd.DataFrame):
+                batch_df_value, batch_summary = item
+                batch_df_visible = True
+            elif isinstance(item, tuple) and len(item) == 2 and item[0] == 'download':
+                download_path = item[1]
+                download_visible = True
+
+            elapsed = int(_time.time() - start_time)
+            yield (
+                batch_summary,
+                gr.update(value=batch_df_value, visible=batch_df_visible),
+                gr.update(value=download_path, visible=download_visible),
+                gr.update(interactive=False, value="Processing..."),
+                gr.update(value=_progress_html(elapsed), visible=True),
+            )
+
+        yield (
+            batch_summary,
+            gr.update(value=batch_df_value, visible=batch_df_visible),
+            gr.update(value=download_path, visible=download_visible),
+            gr.update(interactive=True, value="Run Batch Analysis"),
+            gr.update(visible=False),
+        )
+
+    run_batch_btn.click(
+        run_batch_mode_handler,
+        inputs=[batch_csv_upload, batch_steps_checkboxes, batch_top_n_optimize, batch_top_n_plausibility],
+        outputs=[batch_summary_display, batch_dataframe_display, download_csv_button, run_batch_btn, batch_progress_display],
+    )
+
+    # --- Copilot Chat Event Listeners ---
+    def _stash_and_clear_message(message):
+        return message, ""
+
     send_event = send_btn.click(
+        _stash_and_clear_message,
+        inputs=[msg_input],
+        outputs=[pending_message_buffer, msg_input],
+        queue=False,
+    ).then(
         custom_chat_handler,
-        inputs=[msg_input, chatbot, inner_chatbot, molecule_gallery, csv_upload, use_synspace_checkbox],
+        inputs=[pending_message_buffer, chatbot, inner_chatbot, molecule_gallery, no_csv_state, use_synspace_checkbox],
         outputs=[chatbot, inner_chatbot, molecule_gallery, send_btn, reset_btn, progress_display, batch_summary_display, batch_dataframe_display, download_csv_button, plan_display],
-    ).then(lambda: (None, ""), outputs=[csv_upload, msg_input])
+    ).then(lambda: "", outputs=[msg_input])
     
     submit_event = msg_input.submit(
+        _stash_and_clear_message,
+        inputs=[msg_input],
+        outputs=[pending_message_buffer, msg_input],
+        queue=False,
+    ).then(
         custom_chat_handler,
-        inputs=[msg_input, chatbot, inner_chatbot, molecule_gallery, csv_upload, use_synspace_checkbox],
+        inputs=[pending_message_buffer, chatbot, inner_chatbot, molecule_gallery, no_csv_state, use_synspace_checkbox],
         outputs=[chatbot, inner_chatbot, molecule_gallery, send_btn, reset_btn, progress_display, batch_summary_display, batch_dataframe_display, download_csv_button, plan_display],
-    ).then(lambda: (None, ""), outputs=[csv_upload, msg_input])
+    ).then(lambda: "", outputs=[msg_input])
 
     reset_btn.click(
         reset_conversation,
@@ -1291,6 +1623,6 @@ if __name__ == "__main__":
                 "Set AUTH0_DOMAIN, AUTH0_CLIENT_ID, AUTH0_CLIENT_SECRET, AUTH0_SECRET_KEY to enable.",
                 flush=True,
             )
-        _, local_url, share_url = demo.launch(share=True, server_name="0.0.0.0", css=css)
+        _, local_url, share_url = demo.launch(share=True, server_name="0.0.0.0")
         print("Gradio local URL:", local_url, flush=True)
         print("Gradio share URL:", share_url, flush=True)

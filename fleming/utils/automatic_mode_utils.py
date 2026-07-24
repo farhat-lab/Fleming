@@ -97,12 +97,16 @@ class Batch_Mode_Utils(ADMETUtils, InhibitionUtils):
                                          admet_df['toxicity_admet_score'])
             
             # Add SAscore
+            try:
+                from sascore.sascore import calculateScore as calculate_sascore
+            except ImportError:
+                calculate_sascore = None
+
             sa_scores = []
             for smi in tqdm(smiles_list, desc="Calculating SAscores"):
                 try:
                     mol = Chem.MolFromSmiles(smi)
-                    if mol:
-                        from sascore.sascore import calculateScore as calculate_sascore
+                    if mol and calculate_sascore is not None:
                         sa_scores.append(calculate_sascore(mol))
                     else:
                         sa_scores.append(np.nan)
@@ -140,47 +144,57 @@ class Batch_Mode_Utils(ADMETUtils, InhibitionUtils):
             self.log_step("ADMET Properties Error", str(e))
             return df
     
+    def _compute_ranking_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Compute (or refresh) the hard-filter flag and ranking columns for every row in df.
+
+        Hard filters (SAScore <= 6, Inhibition >= 0.7, Novelty Score >= 0.7) are applied as a primary ranking criterion.
+        Molecules passing the filters are ranked higher than those failing.
+
+        Ranking formula: overall_rank = rank_inhibition + 3*rank_admet_score + rank_novelty_score + rank_sa_score
+
+        Does not sort or truncate the dataframe; callers decide ordering/limits.
+        """
+        # Apply Hard Filters logic to create a passing flag
+        df['passes_hard_filter'] = True
+
+        if 'sa_score' in df.columns:
+            df['passes_hard_filter'] &= (df['sa_score'] <= 6)
+
+        if 'inhibition' in df.columns:
+            df['passes_hard_filter'] &= (df['inhibition'] >= 0.7)
+
+        if 'novelty_score' in df.columns:
+            # Novelty = 1 - similarity. We want similarity <= 0.3, so 1 - novelty <= 0.3 => novelty >= 0.7
+            df['passes_hard_filter'] &= (df['novelty_score'] >= 0.7)
+
+        # Create ranking columns (lower rank = better)
+        df['rank_inhibition'] = df['inhibition'].rank(method='min', ascending=False)
+        df['rank_admet_score'] = df['admet_score'].rank(method='min', ascending=False)
+        df['rank_novelty_score'] = df['novelty_score'].rank(method='min', ascending=False)
+        df['rank_sa_score'] = df['sa_score'].rank(method='min', ascending=True)  # Lower SA is better
+
+        # Calculate overall rank (lower is better)
+        df['overall_rank'] = (df['rank_inhibition'] +
+                            3 * df['rank_admet_score'] +
+                            df['rank_novelty_score'] +
+                            df['rank_sa_score'])
+
+        return df
+
     def rank_and_filter_molecules(self, df: pd.DataFrame, top_n: int = 50) -> pd.DataFrame:
         """
         Rank molecules based on combined score and filter to top N.
-        
-        Hard filters (SAScore <= 6, Inhibition >= 0.7, Novelty Score >= 0.7) are applied as a primary ranking criterion.
-        Molecules passing the filters are ranked higher than those failing.
-        
-        Ranking formula: overall_rank = rank_inhibition + 3*rank_admet_score + rank_novelty_score + rank_sa_score
         """
         if df.empty:
             return df
-            
+
         try:
-            # Apply Hard Filters logic to create a passing flag
-            df['passes_hard_filter'] = True
-            
-            if 'sa_score' in df.columns:
-                df['passes_hard_filter'] &= (df['sa_score'] <= 6)
-            
-            if 'inhibition' in df.columns:
-                df['passes_hard_filter'] &= (df['inhibition'] >= 0.7)
-                
-            if 'novelty_score' in df.columns:
-                # Novelty = 1 - similarity. We want similarity <= 0.3, so 1 - novelty <= 0.3 => novelty >= 0.7
-                df['passes_hard_filter'] &= (df['novelty_score'] >= 0.7)
-            
+            df = self._compute_ranking_columns(df)
+
             passing_count = df['passes_hard_filter'].sum()
             self.log_step("Filtering", f"{passing_count}/{len(df)} molecules passed all hard filters.")
 
-            # Create ranking columns (lower rank = better)
-            df['rank_inhibition'] = df['inhibition'].rank(method='min', ascending=False)
-            df['rank_admet_score'] = df['admet_score'].rank(method='min', ascending=False) 
-            df['rank_novelty_score'] = df['novelty_score'].rank(method='min', ascending=False)
-            df['rank_sa_score'] = df['sa_score'].rank(method='min', ascending=True)  # Lower SA is better
-            
-            # Calculate overall rank (lower is better)
-            df['overall_rank'] = (df['rank_inhibition'] + 
-                                3 * df['rank_admet_score'] + 
-                                df['rank_novelty_score'] + 
-                                df['rank_sa_score'])
-            
             # Sort by passes_hard_filter (True first/descending), then overall_rank (ascending), and take top N
             df_ranked = df.sort_values(['passes_hard_filter', 'overall_rank'], ascending=[False, True]).head(top_n).reset_index(drop=True)
             
@@ -195,41 +209,62 @@ class Batch_Mode_Utils(ADMETUtils, InhibitionUtils):
     def check_plausibility(self, df: pd.DataFrame, describe_mol_function, top_n: int = 100) -> pd.DataFrame:
         """
         Check plausibility using a simple LLM call.
-        
+
+        Each row represents a single molecule (either an original starting molecule or an
+        optimized analog, see 'parent_molecule'/'is_optimized' columns), so plausibility is
+        assessed once per row/SMILES.
+
         Returns:
-            DataFrame with 'plausibility_assessment' and 'passes_plausibility' columns.
+            DataFrame with 'plausibility_assessment'/'passes_plausibility' columns added.
             Sorted by passes_plausibility (True first), then by previous rank.
         """
         if df.empty:
             return df
             
         try:
-            # Determine which column to use for SMILES
-            smiles_col = 'optimized_SMILES' if 'optimized_SMILES' in df.columns else 'SMILES'
-            
             # Work on a copy
             result_df = df.copy()
-            
-            # Ensure optimized_SMILES is filled if we are using it
-            if smiles_col == 'optimized_SMILES':
-                 result_df[smiles_col] = result_df[smiles_col].fillna(result_df['SMILES'])
+            result_df['plausibility_assessment'] = np.nan
+            result_df['passes_plausibility'] = np.nan
+
+            # Only review molecules that passed the hard filters when that signal is available.
+            if 'passes_hard_filter' in result_df.columns:
+                eligible_df = result_df[result_df['passes_hard_filter'] == True]
+                self.log_step(
+                    "Plausibility Eligibility",
+                    f"{len(eligible_df)}/{len(result_df)} molecules eligible after hard-filter gating.",
+                )
+            else:
+                eligible_df = result_df
+                self.log_step(
+                    "Plausibility Eligibility",
+                    "passes_hard_filter not available; using the current ranked set.",
+                )
 
             # Identify rows to check (top_n)
             # We assume df is sorted by priority/rank from previous steps
-            rows_to_check = result_df.head(top_n)
+            rows_to_check = eligible_df.head(top_n)
             
             if rows_to_check.empty:
+                 self.log_step("Plausibility Check Skipped", "No hard-filter-passing molecules available for review.")
                  return result_df
 
-            smiles_list = rows_to_check[smiles_col].tolist()
-            indices_to_check = rows_to_check.index.tolist()
-            
-            self.log_step("Plausibility Check Limit", f"Checking plausibility for top {len(rows_to_check)} molecules")
+            # Dedupe SMILES so we don't ask the LLM to review the same structure twice
+            # (e.g. an optimization round that looped back to an already-seen molecule).
+            row_smiles = rows_to_check['SMILES']
+            unique_smiles = list(dict.fromkeys(row_smiles.tolist()))
+            indices_to_check = list(rows_to_check.index)
 
-            # Batch describe molecules
+            self.log_step(
+                "Plausibility Check Limit",
+                f"Checking plausibility for {len(indices_to_check)} molecules "
+                f"= {len(unique_smiles)} unique SMILES to review"
+            )
+
+            # Batch describe molecules (deduplicated)
             descriptions_str = ""
             try:
-                description_generator = describe_mol_function(smiles_list)
+                description_generator = describe_mol_function(unique_smiles)
                 # The generator yields progress, we consume it to get the final return value
                 while True:
                     next(description_generator)
@@ -240,7 +275,7 @@ class Batch_Mode_Utils(ADMETUtils, InhibitionUtils):
             individual_descriptions = descriptions_str.split("\n\n")
             
             smiles_to_description = {}
-            for i, smi in enumerate(smiles_list):
+            for i, smi in enumerate(unique_smiles):
                 if i < len(individual_descriptions):
                     desc = individual_descriptions[i]
                     # Extract just the description part
@@ -252,38 +287,42 @@ class Batch_Mode_Utils(ADMETUtils, InhibitionUtils):
                 else:
                     smiles_to_description[smi] = f"Error: Could not generate description for {smi}"
 
-            # Run LLM Checks
-            assessments = {}
-            pass_flags = {}
-            plausible_count = 0
+            # Run LLM checks once per unique SMILES (cached), reused across rows that share a SMILES.
+            smiles_to_assessment = {}
+            smiles_to_pass_flag = {}
 
-            for idx in tqdm(indices_to_check, desc="Checking plausibility"):
-                row = result_df.loc[idx]
-                smiles = row[smiles_col]
-                description = smiles_to_description.get(smiles, "Description not available.")
-                
+            for smi in tqdm(unique_smiles, desc="Checking plausibility"):
+                description = smiles_to_description.get(smi, "Description not available.")
+
                 question = (
-                    f"Based on available literature, assess the plausibility of the molecule with SMILES {smiles} "
+                    f"Based on available literature, assess the plausibility of the molecule with SMILES {smi} "
                     f"(Description: {description}) as a novel antibiotic against Tuberculosis. "
                     f"Consider its potential efficacy, novelty, and any known major contraindications or toxicity concerns. "
                     f"Respond with only 'PLAUSIBLE' or 'NOT PLAUSIBLE' followed by detailed reasoning."
                 )
-                
+
                 conversation = [{"role": "system", "content": "You are a medicinal chemist expert."}, {"role": "user", "content": question}]
                 llm_response = self.llm_infer(conversation)
 
-                assessments[idx] = llm_response
-                is_plausible = llm_response.strip().upper().startswith("PLAUSIBLE")
-                pass_flags[idx] = is_plausible
+                smiles_to_assessment[smi] = llm_response
+                smiles_to_pass_flag[smi] = llm_response.strip().upper().startswith("PLAUSIBLE")
+
+            # Populate per-row results from the cached per-SMILES results.
+            plausible_row_count = 0
+            for idx in indices_to_check:
+                smi = result_df.at[idx, 'SMILES']
+                assessment = smiles_to_assessment.get(smi)
+                is_plausible = smiles_to_pass_flag.get(smi, False)
+                result_df.at[idx, 'plausibility_assessment'] = assessment
+                result_df.at[idx, 'passes_plausibility'] = is_plausible
                 if is_plausible:
-                    plausible_count += 1
-            
-            # Update DataFrame
-            result_df['plausibility_assessment'] = result_df.index.map(assessments)
-            result_df['passes_plausibility'] = result_df.index.map(pass_flags)
-            
-            self.log_step("Plausibility Check", 
-                         f"{plausible_count} plausible out of {len(rows_to_check)} checked.")
+                    plausible_row_count += 1
+
+            self.log_step(
+                "Plausibility Check",
+                f"{plausible_row_count}/{len(indices_to_check)} molecules judged plausible "
+                f"({len(unique_smiles)} unique SMILES reviewed)."
+            )
             
             # Sort: Passes Plausibility (True) > False > NaN
             sort_cols = ['passes_plausibility']
@@ -312,13 +351,18 @@ class Batch_Mode_Utils(ADMETUtils, InhibitionUtils):
         4. Select best neighbor: lowest number of failed ADMET tasks (fail_sum).
         5. If best neighbor has fewer failures than current molecule, update current to best neighbor and repeat.
         6. Continue for up to 5 rounds.
+
+        Each optimized molecule that is found is added as its own row (not merged into its
+        parent's row), with 'parent_molecule' set to the original SMILES it was derived from
+        and 'is_optimized' set to True. Original starting molecules keep their own row with
+        'is_optimized' set to False and 'parent_molecule' left blank.
         """
         if df.empty:
             return df
             
         try:
-            optimized_data = []
-            
+            new_optimized_rows = []  # rows for the newly-found optimized molecules
+
             for index, row in tqdm(df.iterrows(), total=len(df), desc="Optimizing molecules (Multi-round)"):
                 current_smiles = row['SMILES']
                 current_failures = row.get('fail_sum')
@@ -381,26 +425,51 @@ class Batch_Mode_Utils(ADMETUtils, InhibitionUtils):
                         # No improvement in failures
                         break
                 
-                row_dict = row.to_dict()
-                
-                # Always record the final molecule in optimized_SMILES (best found or original)
-                row_dict['optimized_SMILES'] = current_smiles
-                
-                # Only record optimization metadata if we actually changed the molecule
+                # Only record a new row if optimization actually changed the molecule
                 if len(history) > 1:
-                    row_dict['optimization_rounds'] = len(history) - 1
-                    row_dict['optimized_fail_sum'] = current_failures
-                    row_dict['is_optimized'] = True
-                else:
-                    row_dict['is_optimized'] = False
-                    
-                optimized_data.append(row_dict)
-            
-            result_df = pd.DataFrame(optimized_data)
-            
-            optimized_count = result_df['is_optimized'].sum() if 'is_optimized' in result_df.columns else 0
-            self.log_step("Optimization", 
-                         f"Successfully optimized {optimized_count}/{len(result_df)} molecules")
+                    new_optimized_rows.append({
+                        'SMILES': current_smiles,
+                        'parent_molecule': row['SMILES'],
+                        'optimization_rounds': len(history) - 1,
+                    })
+
+            # Mark the starting molecules as non-optimized, un-parented rows
+            original_df = df.copy()
+            original_df['parent_molecule'] = np.nan
+            original_df['optimization_rounds'] = np.nan
+            original_df['is_optimized'] = False
+
+            if not new_optimized_rows:
+                self.log_step("Optimization", f"Successfully optimized 0/{len(original_df)} molecules")
+                return original_df
+
+            # Compute full inhibition/ADMET/SAscore/novelty metrics for the new optimized
+            # molecules so their row stands on its own, rather than inheriting their parent's values.
+            # Dedupe by SMILES first (different parents can converge on the same optimized
+            # analog) so add_admet_properties' merge-on-SMILES doesn't blow up row counts.
+            optimized_df = pd.DataFrame(new_optimized_rows)
+            unique_smiles_df = optimized_df[['SMILES']].drop_duplicates().reset_index(drop=True)
+            unique_smiles_df = self.add_inhibition_predictions(unique_smiles_df)
+            unique_smiles_df = self.add_admet_properties(unique_smiles_df)
+            optimized_df = optimized_df.merge(unique_smiles_df, on='SMILES', how='left')
+            optimized_df['is_optimized'] = True
+
+            result_df = pd.concat([original_df, optimized_df], ignore_index=True, sort=False)
+
+            # Re-rank across the combined set (originals + optimized analogs) so both are
+            # compared on equal footing, and re-sort so downstream steps (e.g. plausibility)
+            # still see the best candidates first.
+            result_df = self._compute_ranking_columns(result_df)
+            result_df = result_df.sort_values(
+                ['passes_hard_filter', 'overall_rank'], ascending=[False, True]
+            ).reset_index(drop=True)
+
+            optimized_count = len(optimized_df)
+            self.log_step(
+                "Optimization",
+                f"Successfully optimized {optimized_count}/{len(original_df)} molecules "
+                f"(added {optimized_count} new row(s) for the optimized analogs)"
+            )
             
             return result_df
             
@@ -573,18 +642,17 @@ class Batch_Mode_Utils(ADMETUtils, InhibitionUtils):
             "Top 5 Molecules by Overall Rank:",
         ])
         
-        # Determine which smiles column to display if optimized
-        display_col = 'optimized_SMILES' if 'optimized_SMILES' in df.columns and df['optimized_SMILES'].notna().any() else 'SMILES'
-        
         # Sort by rank if available, otherwise just head
         if 'overall_rank' in df.columns:
             top_molecules = df.sort_values('overall_rank').head(5)
         else:
             top_molecules = df.head(5)
 
+        has_parent_col = 'parent_molecule' in df.columns
+
         for i, (_, row) in enumerate(top_molecules.iterrows(), 1):
-            smi = row[display_col] if pd.notna(row.get(display_col)) else row['SMILES']
-            
+            smi = row['SMILES']
+
             inhibition_val = row.get('inhibition')
             inhibition_str = f"{inhibition_val:.3f}" if pd.notna(inhibition_val) else "N/A"
 
@@ -596,14 +664,17 @@ class Batch_Mode_Utils(ADMETUtils, InhibitionUtils):
             
             fail_sum_val = row.get('fail_sum')
             fail_sum_str = f"{fail_sum_val}" if pd.notna(fail_sum_val) else "N/A"
-            
-            opt_rounds = row.get('optimization_rounds')
-            opt_str = f" (Opt rounds: {opt_rounds})" if pd.notna(opt_rounds) and opt_rounds > 0 else ""
 
-            plausibility = row.get('passes_plausibility')
-            plaus_str = ""
-            if pd.notna(plausibility):
-                plaus_str = f", Plausible: {'Yes' if plausibility else 'No'}"
+            opt_rounds = row.get('optimization_rounds')
+            parent_smi = row.get('parent_molecule') if has_parent_col else None
+            if pd.notna(parent_smi):
+                opt_str = f" (optimized from {parent_smi}"
+                opt_str += f", rounds: {int(opt_rounds)})" if pd.notna(opt_rounds) else ")"
+            else:
+                opt_str = ""
+
+            plaus_val = row.get('passes_plausibility')
+            plaus_str = f", Plausible: {'Yes' if plaus_val else 'No'}" if pd.notna(plaus_val) else ""
 
             summary_lines.append(
                 f"  {i}. {smi}{opt_str} "
@@ -614,8 +685,8 @@ class Batch_Mode_Utils(ADMETUtils, InhibitionUtils):
                 f"{plaus_str})"
             )
         
-        if 'optimized_SMILES' in df.columns:
-            optimized_count = df['optimized_SMILES'].notna().sum()
-            summary_lines.append(f"\nOptimized molecules: {optimized_count}/{len(df)}")
+        if 'is_optimized' in df.columns:
+            optimized_count = df['is_optimized'].sum()
+            summary_lines.append(f"\nOptimized molecule rows added: {optimized_count}/{len(df)} total rows")
         
         return "\n".join(summary_lines)

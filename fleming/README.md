@@ -139,6 +139,10 @@ These tools are included in `utils/external_tools/`.
 - **SCScore**: Included in `utils/external_tools/scscore`. Uses pre-trained models in `models/`.
 - **SAScore**: Included in `utils/external_tools/sascore`. Requires `fpscores.pkl.gz` (included).
 
+## 📊 Data Files
+
+- **`data/chembl_abx_cleaned.csv`**: A set of antibiotics and antibacterial candidate compounds pulled from [ChEMBL](https://www.ebi.ac.uk/chembl/), including approved antibiotics as well as investigational/candidate compounds (not filtered to only fully-approved drugs). This is used as the reference set for **novelty scoring** — new/generated molecules are compared (via Tanimoto similarity on Morgan fingerprints) against this set, so novelty reflects structural dissimilarity to known antibiotics and antibacterial candidates. Configured via `chembl_antibiotics_data` in `config.yaml`.
+
 ## 📂 Project Structure
 
 - `main_fleming.py`: Core agent logic.
@@ -156,6 +160,7 @@ These tools are included in `utils/external_tools/`.
 - **Model Not Found**: Check `config.yaml` paths and ensure model checkpoints are downloaded.
 - **CUDA/GPU**: Molecular generation is faster with a GPU. Ensure PyTorch is installed with CUDA support.
 - **Optional deps**: If you see warnings about missing `pqapi`, `PyTDC/tdc`, `langchain_community`, `chemicalconverters`, or `synspace`, those features are disabled but the core app should still run.
+- **Missing IUPAC names**: The `describe_molecule` tool (and `get_iupac`) optionally use the `chemicalconverters` module (pip package **`chemical-converters`**) to compute IUPAC names. It is **not installed by default** because it pins old, narrow dependency versions (`transformers==4.36.2`, `torch==2.1.2`, `rdkit==2023.3.3`) that conflict with the rest of this project's stack. If it's missing (or fails to load its model), IUPAC names are reported as unavailable and the LLM instead reasons directly from the SMILES string - the description quality is not meaningfully affected.
 
 ## Development
 Fleming runs in a conda environment. Here is a process to help manage the environment and corresponding YAML file
