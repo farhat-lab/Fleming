@@ -12,7 +12,6 @@ from utils.automatic_mode_utils import Batch_Mode_Utils
 
 
 import torch 
-from rdkit import Chem
 import multiprocessing # Added import
 from utils.pqa_agent import PQA_Agent
 
@@ -455,9 +454,13 @@ class Fleming(Basic_Agent):
                 
             self.conversation.append({"role": "user", "content": summarization_prompt})
             # Fleming's final, user-facing answer synthesizes every sub-agent's results (quantitative
-            # values, literature links, etc.) - use the strong model and a generous token budget so
-            # multi-molecule responses with citations aren't cut short.
-            final_summary = self.llm_infer(self.conversation, model=PLANNER_MODEL, max_tokens=3000)
+            # values, literature links, etc.) - always use the flagship planner model.
+            final_summary = self.llm_infer(
+                self.conversation,
+                model=PLANNER_MODEL,
+                reasoning_effort=PLANNER_REASONING,
+                max_tokens=3000,
+            )
             self.conversation.append({"role": "assistant", "content": final_summary})
             self.latest_final_response = final_summary
             return final_summary
@@ -486,49 +489,11 @@ class Fleming(Basic_Agent):
         # lost sub-task context), rather than inferred by scanning message text for phrases.
         force_planner_next_round = False
 
-        def _extract_valid_smiles_tokens(text, max_tokens=15):
-            """
-            Best-effort scan for RDKit-parseable SMILES substrings anywhere in free text.
-            Used so that candidate molecules mentioned late in a long sub-agent summary
-            aren't silently lost when that summary gets truncated for Fleming's context.
-            """
-            candidates = re.findall(r'[A-Za-z0-9@\+\-\[\]\(\)=#\.\\/%]{4,120}', text)
-            valid = []
-            seen = set()
-            for cand in candidates:
-                cand = cand.strip('.,;:')
-                if not cand or cand in seen or not any(c.isalpha() for c in cand):
-                    continue
-                try:
-                    mol = Chem.MolFromSmiles(cand)
-                except Exception:
-                    mol = None
-                if mol is not None:
-                    valid.append(cand)
-                    seen.add(cand)
-                if len(valid) >= max_tokens:
-                    break
-            return valid
-
         def _compact_text(value, max_chars=1200):
             text = str(value).strip()
             if len(text) <= max_chars:
                 return text
-            truncated = text[:max_chars].rstrip() + "... [truncated]"
-            # If truncation would drop candidate SMILES mentioned later in the full text,
-            # append them explicitly so downstream steps (e.g. literature review of an
-            # optimized analog) still know which molecule(s) to reference.
-            try:
-                full_smiles = _extract_valid_smiles_tokens(text)
-                missing = [s for s in full_smiles if s not in truncated]
-                if missing:
-                    truncated += (
-                        "\nCandidate SMILES mentioned in the full report (preserved despite truncation): "
-                        + ", ".join(missing)
-                    )
-            except Exception:
-                pass
-            return truncated
+            return text[:max_chars].rstrip() + "... [truncated]"
 
         def _emit_chat(panel, chat_message):
             nonlocal last_emitted_main, last_emitted_inner
@@ -885,6 +850,21 @@ class Fleming(Basic_Agent):
                 final_summary = self._generate_final_summary()
                 yield 'main', ChatMessage(role="assistant", content=f"[{self.agent_name} Summary] {final_summary}")
                 return
+
+            elif not response_stripped:
+                # An empty/blank response with no tool call and no finish signal would otherwise loop
+                # unchanged (same conversation, same near-zero temperature) until the round limit is
+                # hit, silently burning the entire budget without ever calling a tool. Nudge explicitly
+                # and escalate to the stronger planner model rather than repeating the same failing call.
+                self.conversation.append({
+                    "role": "user",
+                    "content": (
+                        "Your last response was empty. Please either make a tool call in the exact format "
+                        "'Tool-call: <agent_or_tool_call>', or if you already have everything you need, "
+                        "provide your final answer starting with 'ANSWER:'."
+                    )
+                })
+                force_planner_next_round = True
 
             else: 
                 # No tool call, just an intermediate thought. Continue loop.

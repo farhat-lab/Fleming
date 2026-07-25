@@ -708,7 +708,12 @@ class Basic_Agent(PQA_Agent):
                 summarization_prompt = self._build_summary_prompt_with_tool_outputs()
                 self.conversation.append({"role": "user", "content": summarization_prompt})
                 
-                final_summary = self.llm_infer(self.conversation, reasoning_effort='low', max_tokens=2500)
+                final_summary = self.llm_infer(
+                    self.conversation,
+                    model=PLANNER_MODEL,
+                    reasoning_effort=PLANNER_REASONING,
+                    max_tokens=2500,
+                )
                 self.latest_final_response = final_summary
                 # Yield final result as a dictionary instead of returning
                 yield {"type": "final", "content": final_summary, "tools_used": self.tools_called_in_current_run}
@@ -765,7 +770,12 @@ class Basic_Agent(PQA_Agent):
                             summarization_prompt = self._build_summary_prompt_with_tool_outputs()
                             self.conversation.append({"role": "user", "content": summarization_prompt})
                             
-                            final_summary = self.llm_infer(self.conversation, reasoning_effort='low', max_tokens=2500)
+                            final_summary = self.llm_infer(
+                                self.conversation,
+                                model=PLANNER_MODEL,
+                                reasoning_effort=PLANNER_REASONING,
+                                max_tokens=2500,
+                            )
                             self.latest_final_response = final_summary
                             # Yield final result as a dictionary instead of returning
                             yield {"type": "final", "content": final_summary, "tools_used": self.tools_called_in_current_run}
@@ -814,11 +824,38 @@ class Basic_Agent(PQA_Agent):
                 })
                 issued_required_inhibition_nudge = True
                 inhibition_nudge_count += 1
+            elif self._needs_required_admet_outputs(molecule):
+                # This mirrors the inhibition/optimization branches above but was previously missing,
+                # which let the ADMET agent silently loop on empty/non-actionable mini-model responses
+                # (same conversation state, near-zero temperature -> same empty response every turn)
+                # until the hard turn limit was hit, without ever calling a quantitative ADMET tool.
+                self.conversation.append({
+                    "role": "user",
+                    "content": (
+                        "Your last response did not contain a tool call, a FINISHED call, or a summary. "
+                        "Before concluding, call a quantitative ADMET tool (e.g. "
+                        "self.get_admet_prediction_string_summary(...) or self.get_admet_prediction_raw_table(...)) "
+                        "and a literature-review tool, then use those concrete outputs in your reasoning."
+                    )
+                })
+                force_planner_next_turn = True
             elif self._needs_optimization_tool_output(molecule):
                 self.conversation.append({
                     "role": "user",
                     "content": self._required_optimization_tool_prompt(molecule, strict=False)
                 })
+            elif not response_text:
+                # Generic guard for any other agent type: an empty response with no tool call and no
+                # finish signal would otherwise loop unchanged and silently burn the whole turn budget.
+                self.conversation.append({
+                    "role": "user",
+                    "content": (
+                        "Your last response was empty. Please either make a tool call in the exact format "
+                        "'Tool-call: self.<tool_name>(...)', or if you already have everything you need, "
+                        "conclude with 'FINISHED'."
+                    )
+                })
+                force_planner_next_turn = True
             
         
         
@@ -902,7 +939,12 @@ class Basic_Agent(PQA_Agent):
                         self._record_tool_output_for_summary(recovered_tool_name, tool_result)
         summarization_prompt = self._build_summary_prompt_with_tool_outputs()
         self.conversation.append({"role": "user", "content": summarization_prompt})
-        final_summary = self.llm_infer(self.conversation, reasoning_effort='low', max_tokens=2500)
+        final_summary = self.llm_infer(
+            self.conversation,
+            model=PLANNER_MODEL,
+            reasoning_effort=PLANNER_REASONING,
+            max_tokens=2500,
+        )
         self.latest_final_response = final_summary
         # Yield final result as a dictionary instead of returning
         yield {"type": "final", "content": final_summary, "tools_used": self.tools_called_in_current_run}
@@ -1009,7 +1051,8 @@ class Basic_Agent(PQA_Agent):
                     messages=conversation,
                 )
 
-            if "I'm sorry, I can't assist with that" in response.choices[0].message.content or "I'm unable to view the image" in response.choices[0].message.content or "I'm unable to provide a definitive answer" in response.choices[0].message.content:
+            _raw_content = response.choices[0].message.content or ""
+            if "I'm sorry, I can't assist with that" in _raw_content or "I'm unable to view the image" in _raw_content or "I'm unable to provide a definitive answer" in _raw_content:
                     # Log output size for this attempt
                     try:
                         elapsed = time.time() - start_time
