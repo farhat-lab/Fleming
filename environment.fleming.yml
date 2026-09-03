@@ -1,4 +1,4 @@
-name: /n/scratch/users/a/anz226/fleming-interface-conda
+name: fleming-interface-conda
 channels:
   - pytorch
   - conda-forge
@@ -232,4 +232,9 @@ dependencies:
       - websockets==15.0.1
       - werkzeug==3.1.8
       - xarray==2025.6.1
+      - python-jose[cryptography]
+      - fastapi
+      - httpx
+      - uvicorn[standard]
+      - itsdangerous
 prefix: /n/scratch/users/a/anz226/fleming-interface-conda

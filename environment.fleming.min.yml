@@ -14,7 +14,7 @@ dependencies:
   - torchaudio
   #- cudatoolkit=11.8  # Remove or comment out if no GPU
   - pip:
-    - gradio
+    - gradio==5.50.0
     - openai
     - pyyaml
     - requests
@@ -24,3 +24,8 @@ dependencies:
     - seaborn
     - admet-ai
     - dotenv
+    - python-jose[cryptography]
+    - fastapi
+    - uvicorn[standard]
+    - httpx
+    - itsdangerous
