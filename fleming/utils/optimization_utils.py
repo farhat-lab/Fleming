@@ -29,10 +29,12 @@ rank_weights = {
 }
 
 CYTOTOX_MODEL_CONTEXT = (
-    "Model evidence context: cytotoxicity predictions are Chemprop model outputs with uncertainty estimates. Treat "
-    "them as screening priors for HepG2, HSKMC, and IMR90 liability rather than definitive safety evidence. A low-risk "
-    "prediction with high uncertainty, sparse training coverage, or literature toxicity for close analogs should be "
-    "adjusted toward caution."
+    "Model evidence context: cytotoxicity predictions are Chemprop model outputs with Dirichlet uncertainty "
+    "estimates. Both numbers run 0-1. For the prediction, HIGHER means MORE predicted cytotoxicity. For the "
+    "uncertainty, HIGHER means LESS confident - it is the Dirichlet vacuity K/S, which is 1.0 when the model saw no "
+    "evidence either way and falls toward 0 as evidence accumulates. Treat the predictions as screening evidence "
+    "rather than definitive safety results. These three predictions are for HepG2, HSKMC and IMR90 specifically. They "
+    "are NOT a prediction for any other cell line or species."
 )
 
 class OptimizationUtils(Basic_Agent):
@@ -356,6 +358,11 @@ Format: ["SMILES1", "SMILES2", ...]
             # 11. Build the markdown table with cytotoxicity
             lines = []
             
+            lines.append(
+                "Column scales (all 0-1): Inhibition - higher = more predicted TB activity. "
+                "Uncertainty - Dirichlet uncertainty on that inhibition score, higher = LESS confident. "
+                "Hepatocyte / Muscle / Lung Tox - higher = more predicted cytotoxicity on that cell line.")
+            lines.append("")
             lines.append("| SMILES | Tasks Passed | Tasks Failed | Inhibition | Uncertainty | Hepatocyte Tox | Muscle Tox | Lung Tox |")
             lines.append("|--------|--------------|--------------|------------|-------------|----------------|------------|----------|")
             

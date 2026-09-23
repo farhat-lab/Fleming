@@ -488,6 +488,8 @@ class Fleming(Basic_Agent):
         # explicitly at the exact point a re-planning nudge is issued (plan-gate block, plan update,
         # lost sub-task context), rather than inferred by scanning message text for phrases.
         force_planner_next_round = False
+        # Consecutive rounds that called no tool and did not finish. Reset by any tool call.
+        no_tool_call_rounds = 0
 
         def _compact_text(value, max_chars=1200):
             text = str(value).strip()
@@ -546,12 +548,19 @@ class Fleming(Basic_Agent):
                     if subagent_result is not None:
                         subagent_summary = subagent_result['content']
                         tools_used = subagent_result['tools_used']
-                        compact_subagent_summary = _compact_text(subagent_summary, max_chars=3000)
+                        # NOT truncated. A sub-agent's summary is ordered raw output -> literature ->
+                        # adjusted conclusion, and this used to keep only the first 3000 characters,
+                        # which removed the conclusion by construction. Measured on a live run: a
+                        # parallel call returned 15,372 characters, Fleming was handed 3,000, and both
+                        # agents' literature-adjusted values (inhibition 0.109 -> 0.13, cytotoxicity
+                        # 0.854 -> 0.88) sat in the discarded 80%. Fleming then reported the raw
+                        # numbers and stated that no adjustment had been made.
+                        subagent_summary_for_context = subagent_summary
                         tools_used_display = ", ".join(map(str, tools_used[:5])) if tools_used else "none"
                         if len(tools_used) > 5:
                             tools_used_display += ", ..."
                         tool_output_for_context = (
-                            f"The sub-agent call is complete. Summary: {compact_subagent_summary}. "
+                            f"The sub-agent call is complete. Summary: {subagent_summary_for_context}. "
                             f"Tools used by sub-agent: {tools_used_display}."
                         )
                         self.conversation.append({"role": "system", "content": tool_output_for_context})
@@ -678,6 +687,7 @@ class Fleming(Basic_Agent):
                     # Instruct agent to finish up
                     self.conversation.append({"role": "system", "content": "You are nearing the maximum number of turns. Please summarize your findings now, even if the task is incomplete or results are not optimal. Use the FINISHED tool call to submit your summary."})
             if tool_call_str and tool_call_str.strip() and tool_call_str.lower() not in ['none', 'n/a']:
+                no_tool_call_rounds = 0
                 agent_names = ['admet_agent', 'inhibition_agent', 'optimization_agent', 'molecular_reasoner_agent', 'generate_agent']
                 agent_name = next((name for name in agent_names if name in tool_call_str), None)
 
@@ -690,12 +700,13 @@ class Fleming(Basic_Agent):
                             subagent_summary = subagent_result['content']
                             tools_used = subagent_result['tools_used']
                             self._mark_plan_completion_from_tools([agent_name] + list(tools_used or []))
-                            compact_subagent_summary = _compact_text(subagent_summary, max_chars=3000)
+                            # Not truncated - see the note at the other sub-agent summary site.
+                            subagent_summary_for_context = subagent_summary
                             tools_used_display = ", ".join(map(str, tools_used[:5])) if tools_used else "none"
                             if len(tools_used) > 5:
                                 tools_used_display += ", ..."
                             tool_output_for_context = (
-                                f"The sub-agent call is complete. Summary: {compact_subagent_summary}. "
+                                f"The sub-agent call is complete. Summary: {subagent_summary_for_context}. "
                                 f"Tools used by sub-agent: {tools_used_display}."
                             )
                             self.conversation.append({"role": "system", "content": tool_output_for_context})
@@ -731,7 +742,10 @@ class Fleming(Basic_Agent):
                                     yield 'download', download_path
                                     # Also notify via chat
                                     yield 'inner', ChatMessage(role="assistant", content=f"[Fleming] Generated downloadable results file: {download_path}")
-                            compact_batch_summary = _compact_text(summary_update, max_chars=1000)
+                            # Still bounded, unlike the per-molecule paths above: this summary covers an
+                            # entire batch CSV, so it is the one place where the string grows with the size
+                            # of the job rather than with one molecule's evidence.
+                            compact_batch_summary = _compact_text(summary_update, max_chars=8000)
                             tool_output_for_context = (
                                 "The batch processing is complete. Summary of results: "
                                 f"{compact_batch_summary}\n\n"
@@ -816,9 +830,12 @@ class Fleming(Basic_Agent):
                                 force_planner_next_round = True
                                 continue
 
+                            # Not truncated. The cytotoxicity tool alone returns ~1,400
+                            # characters, so the previous 1,000-char cap discarded the scale
+                            # and uncertainty guidance and could reach the numbers themselves.
                             tool_output_for_context = (
                                 "The tool call is complete. Result: "
-                                + _compact_text(tool_response, max_chars=1000)
+                                + str(tool_response)
                                 + " Use this concrete tool output directly in later reasoning and in the final answer."
                             )
                             self._mark_plan_completion_from_tools(direct_tool_names)
@@ -866,9 +883,17 @@ class Fleming(Basic_Agent):
                 })
                 force_planner_next_round = True
 
-            else: 
-                # No tool call, just an intermediate thought. Continue loop.
-                pass
+            else:
+                # Neither a tool call nor a finish signal. This must never pass in silence -
+                # see Basic_Agent._no_tool_call_nudge for exactly what that used to cost.
+                no_tool_call_rounds += 1
+                self.conversation.append({
+                    "role": "user",
+                    "content": self._no_tool_call_nudge(
+                        no_tool_call_rounds,
+                        finish_hint="use 'Tool-call: self.FINISHED()'"),
+                })
+                force_planner_next_round = True
         
         # If we reach here, we've hit the max_round limit without Fleming finishing
         print(f"\033[1;33;40m Fleming reached turn limit. Forcing summary.\033[0m")

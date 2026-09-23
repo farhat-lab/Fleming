@@ -315,6 +315,35 @@ class Basic_Agent(PQA_Agent):
             answer = input("\033[1;34;40mYou: \033[0m")
             return answer
 
+    # A turn that is neither a tool call nor a completion signal is a dead turn: nothing runs,
+    # nothing is appended, and the loop re-queries with an unchanged conversation. At near-zero
+    # temperature the model then repeats itself or - worse - reasons that its tools must be
+    # broken and starts explaining why it cannot proceed.
+    #
+    # Both loops used to allow this. Fleming's had a bare `else: pass`, and the sub-agent chain
+    # below nudged only when the response was EMPTY, so a confidently formatted answer that
+    # simply omitted the `Tool-call:` line got no feedback at all. Observed live: Fleming wrote
+    # a complete final answer on turn 1, had it silently discarded, then spent six turns
+    # asserting its tools were "not available in the current execution environment" before
+    # giving up - having never once attempted a tool call. This is the feedback that was missing.
+    def _no_tool_call_nudge(self, attempt: int = 1, finish_hint: str = "conclude with 'FINISHED'") -> str:
+        """The prod to send after a turn that called no tool and did not finish."""
+        if attempt <= 1:
+            return (
+                "Your last response contained neither a tool call nor a completion signal, so "
+                "nothing was executed and no result was recorded. If you still need evidence, "
+                "make the call in exactly this format, on a single line:\n"
+                "Tool-call: self.<tool_name>(...)\n"
+                f"If you already have everything you need, {finish_hint}. Do not write a final "
+                "answer in place of a tool call - a final answer submitted this way is discarded."
+            )
+        return (
+            f"That is {attempt} turns in a row with no tool call and no completion signal. Your "
+            "tools ARE available in this session; the previous turns simply did not call any. "
+            "Re-read the tool list in your instructions and emit exactly one line beginning with "
+            f"'Tool-call:' now, or {finish_hint} if the evidence you already have is sufficient."
+        )
+
     def FINISHED(self) -> str:
         """
         Tool call to indicate the agent has completed its task and is ready for summarization.
@@ -662,6 +691,8 @@ class Basic_Agent(PQA_Agent):
         # `force_planner_next_turn` is set explicitly at the exact point a re-planning nudge is issued
         # (e.g. after a failed tool call), rather than inferred by scanning message text for phrases.
         force_planner_next_turn = False
+        # Consecutive turns that called no tool and did not finish. Reset by any tool call.
+        no_tool_call_turns = 0
         for turn_idx in range(15):
             planner_like_turn = turn_idx == 0 or force_planner_next_turn
             force_planner_next_turn = False
@@ -719,6 +750,7 @@ class Basic_Agent(PQA_Agent):
                 yield {"type": "final", "content": final_summary, "tools_used": self.tools_called_in_current_run}
                 return
             if has_tool_call:
+                no_tool_call_turns = 0
                 try:
                     tool_name_match = re.search(r"self\.(\w+)\s*\(", response)
                     current_tool_name = tool_name_match.group(1) if tool_name_match else "unknown_tool"
@@ -854,6 +886,17 @@ class Basic_Agent(PQA_Agent):
                         "'Tool-call: self.<tool_name>(...)', or if you already have everything you need, "
                         "conclude with 'FINISHED'."
                     )
+                })
+                force_planner_next_turn = True
+            else:
+                # Catch-all: a NON-empty response with no tool call and no finish signal, from an
+                # agent with none of the specific required-output guards above. Every branch before
+                # this one is conditional on the agent type or on the response being empty, so this
+                # case - the common one - previously fell through and the turn was spent in silence.
+                no_tool_call_turns += 1
+                self.conversation.append({
+                    "role": "user",
+                    "content": self._no_tool_call_nudge(no_tool_call_turns),
                 })
                 force_planner_next_turn = True
             
