@@ -36,7 +36,7 @@ except ImportError as e:
 from utils.utils import Basic_Agent
 
 INHIBITION_MODEL_CONTEXT = (
-    "Model evidence context: this Chemprop MTB-inhibition model should be treated as an initial quantitative prior, "
+    "Model evidence context: this Chemprop MTB-inhibition model provides one quantitative line of evidence, to be weighed together with the other model outputs and the literature rather than used as a default answer, "
     "not an assay-equivalent potency estimate. Robustness is higher when Dirichlet uncertainty is low and literature "
     "or SAR for close scaffolds supports antimycobacterial activity; it is lower when uncertainty is high or the "
     "literature contradicts the prediction."

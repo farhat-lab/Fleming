@@ -461,6 +461,22 @@ class Fleming(Basic_Agent):
                 reasoning_effort=PLANNER_REASONING,
                 max_tokens=3000,
             )
+            # The summarizer sometimes echoes the tool-call syntax that fills the rest of
+            # the conversation instead of writing prose, which silently makes a bare
+            # "Tool-call: self.FINISHED()" the user-facing answer and discards the whole
+            # workup. Ask once more, explicitly, before accepting it.
+            if re.match(r'\s*Tool-call\s*:', final_summary or "", flags=re.IGNORECASE):
+                print(f"\033[1;33;40m Summary was a tool call - re-asking.\033[0m")
+                self.conversation.append({"role": "user", "content": (
+                    "That was a tool call, not a summary. The task is already finished. "
+                    "Write the final answer now as prose, including every value the user "
+                    "asked for, and do not emit a 'Tool-call:' line.")})
+                final_summary = self.llm_infer(
+                    self.conversation,
+                    model=PLANNER_MODEL,
+                    reasoning_effort=PLANNER_REASONING,
+                    max_tokens=3000,
+                )
             self.conversation.append({"role": "assistant", "content": final_summary})
             self.latest_final_response = final_summary
             return final_summary
