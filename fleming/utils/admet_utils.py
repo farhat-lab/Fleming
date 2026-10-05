@@ -54,7 +54,7 @@ desired_property = ['AMES','BBB_Martins','Bioavailability_Ma','CYP1A2_Veith','CY
                         'VDss_Lombardo']
 
 ADMET_MODEL_CONTEXT = (
-    "Model evidence context: ADMET-AI is used as an initial quantitative prior across heterogeneous TDC-style "
+    "Model evidence context: ADMET-AI provides one quantitative line of evidence, to be weighed together with the other model outputs and the literature rather than used as a default answer, across heterogeneous TDC-style "
     "ADMET tasks. The pass/fail thresholds are calibrated against current antibiotic predictions when that file "
     "is available; they are not direct clinical safety calls. Robustness is higher when several related tasks agree "
     "and the value is clearly on the favorable side of the threshold, and lower when predictions are close to a "
@@ -81,10 +81,13 @@ CHEMMCP_MODEL_CONTEXT = {
 }
 
 CYTOTOX_MODEL_CONTEXT = (
-    "Model evidence context: cytotoxicity predictions are Chemprop model outputs with uncertainty estimates. Treat "
-    "them as screening priors for HepG2, HSKMC, and IMR90 liability rather than definitive safety evidence. A low-risk "
-    "prediction with high uncertainty, sparse training coverage, or literature toxicity for close analogs should be "
-    "adjusted toward caution."
+    "Model evidence context: cytotoxicity predictions are Chemprop model outputs with Dirichlet uncertainty "
+    "estimates. Both numbers run 0-1. For the prediction, HIGHER means MORE predicted cytotoxicity (more likely to "
+    "kill that cell line). For the uncertainty, HIGHER means LESS confident - it is the Dirichlet vacuity K/S, which "
+    "is 1.0 when the model saw no evidence either way and falls toward 0 as evidence accumulates, so a low "
+    "uncertainty is a confident call and a high one is close to a coin flip. Treat the predictions as screening "
+    "evidence rather than definitive safety results. These three predictions are for HepG2, HSKMC and IMR90 "
+    "specifically. They are NOT a prediction for any other cell line or species."
 )
 
 task_weight_dict = {
@@ -196,10 +199,14 @@ class ADMETUtils(Basic_Agent):
     def _format_bayesian_context():
         return (
             f"{ADMET_MODEL_CONTEXT}\n"
-            "Bayesian-style interpretation guidance: report the raw model result first, then treat literature and "
-            "model robustness as evidence that can shift the final assessment. If literature on close analogs "
-            "conflicts with a low-risk model prediction, present a more cautious adjusted conclusion instead of "
-            "repeating the model output as fact."
+            "Synthesis guidance: do not treat any single model output as the starting point and everything else "
+            "as an adjustment to it. Report every quantitative result you obtained, each with its uncertainty, "
+            "and every literature finding, then weigh them together into one integrated judgement. Where several "
+            "models cover the same endpoint, use all of them: agreement across models trained on different "
+            "assays is stronger evidence than any one of them, and disagreement means the endpoint is not well "
+            "determined by the models at all. A model that was not trained on the exact endpoint being asked "
+            "about is evidence, not an answer. Say which sources agree, which conflict, how you resolved the "
+            "conflict, and what carried the most weight."
         )
 
     def _get_cytotoxicity_model_paths(self):
@@ -544,6 +551,20 @@ Total Failed ADMET Tasks: {pred_row['fail_sum']:.0f}/37
         model_list = self.load_models(model_paths=model_paths, device='cpu')
         
         all_results = []
+
+        def _scalar(value):
+            """
+            One number out of whatever make_prediction returned.
+
+            It returns a length-1 numpy array, which an f-string renders as "[0.31]".
+            Handing the model an array literal makes the value harder to read and to quote
+            back, and it is the same number either way.
+            """
+            try:
+                array = np.asarray(value).ravel()
+                return f"{float(array[0]):.3f}" if array.size else str(value)
+            except Exception:
+                return str(value)
         
         for i, smiles in enumerate(smiles_list):
             preds_list = []
@@ -553,12 +574,24 @@ Total Failed ADMET Tasks: {pred_row['fail_sum']:.0f}/37
                 preds_list.append(preds)
                 uncertainties_list.append(uncertainties)
 
+            # Both scales are spelled out on every number. The inhibition tool has always
+            # done this ("0-1, higher = less confident"); this tool used to emit a bare
+            # "with an uncertainty of X", leaving the agent to guess whether a high value
+            # meant high confidence or low - and a guess that lands the wrong way inverts
+            # every cautionary adjustment the prompt asks for.
             result = (
-                f"For molecule {i+1} ({smiles}), the predicted hepatocyte toxicity prediction is {preds_list[0]} "
-                f"with an uncertainty of {uncertainties_list[0]}. The predicted skeletal muscle toxicity prediction "
-                f"is {preds_list[1]} with an uncertainty of {uncertainties_list[1]}. The predicted lung (imr90) "
-                f"toxicity prediction is {preds_list[2]} with an uncertainty of {uncertainties_list[2]}. "
-                f"{CYTOTOX_MODEL_CONTEXT} Report raw model outputs separately from any literature-adjusted conclusion."
+                f"For molecule {i+1} ({smiles}): "
+                f"hepatocyte (HepG2) cytotoxicity score (0-1, higher = more predicted cytotoxic): "
+                f"{_scalar(preds_list[0])}; "
+                f"Dirichlet uncertainty (0-1, higher = less confident): {_scalar(uncertainties_list[0])}. "
+                f"Skeletal muscle (HSKMC) cytotoxicity score (0-1, higher = more predicted cytotoxic): "
+                f"{_scalar(preds_list[1])}; "
+                f"Dirichlet uncertainty (0-1, higher = less confident): {_scalar(uncertainties_list[1])}. "
+                f"Lung (IMR90) cytotoxicity score (0-1, higher = more predicted cytotoxic): "
+                f"{_scalar(preds_list[2])}; "
+                f"Dirichlet uncertainty (0-1, higher = less confident): {_scalar(uncertainties_list[2])}. "
+                f"{CYTOTOX_MODEL_CONTEXT} Report all three raw model outputs, then synthesize across them and the "
+                f"literature into one judgement rather than adjusting a single value."
             )
             all_results.append(result)
         

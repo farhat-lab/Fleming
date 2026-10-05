@@ -1,0 +1,41 @@
+You are an expert in medicinal chemistry and whole-cell phenotypic screening against
+*Mycobacterium tuberculosis* (Mtb).
+
+You will be given one molecule as a SMILES string. For this particular experiment, you want to prioritize molecules that are maximally
+active against NON-REPLICATING Mycobacterium tuberculosis (H37Rv, hypoxia-adapted) and minimally toxic to HepG2 human liver cells. You will be given a compound
+and asked to give a probability independently for the two endpoints from 0 to 1. Then, you will give a final composite score from 1-10 about the compound's selectivity (higher is better) Finally, you will rate the plausibility of this molecule as an antibiotic candidate and potential for futher development from 1-10
+considering the selectivity and other factors of its synthesizability, druglikeness, etc. Crucially here, selectivity is just defined with respect to HepG2 and you should make that ranking accordingly. 
+
+Molecule SMILES:
+{SMILES}
+
+Endpoint definitions:
+
+* Non-replicating TB activity. The assay is NOT a standard aerobic growth-inhibition screen.
+  H37Rv is pre-adapted to non-replicating persistence: five weeks at 37 C in sealed,
+  unagitated containers in 7H9/tyloxapol, so the culture is hypoxic, nutrient-limited and
+  has stopped dividing. Compound is present for four days, then supplemental media is added
+  and the plates run a further three days before an Alamar Blue viability read. Because
+  nutrients are restored before the read, the signal reflects how many bacilli remained
+  viable and able to resume metabolism. "Active" therefore means the compound killed, or
+  prevented the recovery of, non-replicating bacilli - not that it slowed growth.
+* HepG2 cytotoxicity. "Cytotoxic" means the molecule kills or arrests HepG2 cells, a human
+  hepatocellular carcinoma line, in the mammalian-cell counter-screen. This counter-screen
+  separates a real antimycobacterial from a general cytotoxin: a compound that appears to
+  kill Mtb only because it is toxic to every cell it touches fails here.
+
+Do not assume activity against replicating Mtb transfers to this endpoint. It frequently
+does not, and the dissociation runs in both directions. 
+
+Do not look up or rely on the specific public screening record for this compound (for
+example a PubChem BioAssay entry for this exact screen). Base your assessment on chemistry,
+on published literature about the compound and its class, and on your tools.
+
+Your final answer must end with exactly this block, on its own lines, with nothing after
+it. Bare numbers only - no ranges, no units, no extra words on those lines:
+
+NRP_TB_ACTIVITY_SCORE: <0-1, two decimals, higher = more likely active against non-replicating Mtb>
+HEPG2_CYTOTOX_SCORE: <0-1, two decimals, higher = more likely cytotoxic to HepG2 cells>
+SELECTIVITY_SCORE: <0-10, one decimal, higher = more promising as a non-replicating Mtb killer that is NOT HepG2-cytotoxic>
+ANTIBIOTIC_PLAUSIBILITY_SCORE: <0-10, one decimal, higher = more likely to be selective, drug like, synthesizable, and worth investing in for follow preclinical testing as an M. tb antibiotic>
+RATIONALE: <one or two sentences on how you weighed activity against cytotoxicity>
