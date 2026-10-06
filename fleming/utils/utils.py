@@ -34,7 +34,9 @@ import multiprocessing # Added import
 from utils.pqa_agent import PQA_Agent
 
 from prompts import *
-MODEL='gpt-5.4-mini'
+MODEL='gpt-5.6-terra'
+PLANNER_MODEL='gpt-5.6-sol'
+PLANNER_REASONING='high'
 # Add external_tools to path to allow importing sascore and scscore
 # This file is in utils/, and external_tools is in utils/external_tools
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -84,10 +86,16 @@ except Exception as exc:
     PythonREPL = None
     print(f"Warning: langchain_experimental is not available; falling back to a minimal Python REPL. ({exc})")
 
+converter = None
 if NamesConverter is not None:
-    converter = NamesConverter(model_name="knowledgator/SMILES2IUPAC-canonical-base")
-else:
-    converter = None
+    try:
+        converter = NamesConverter(model_name="knowledgator/SMILES2IUPAC-canonical-base")
+    except Exception as exc:
+        # Package is installed but the model itself failed to load (e.g. missing/incompatible
+        # `transformers`, no network access to download weights, etc.) - fall back gracefully
+        # to not having IUPAC names rather than crashing the whole app on import.
+        converter = None
+        print(f"Warning: chemicalconverters model failed to load; falling back to no IUPAC names. ({exc})")
 
 if PythonREPL is None:
     class PythonREPL:
@@ -111,6 +119,43 @@ import dotenv
 dotenv.load_dotenv()
 
 
+# The Harvard HUIT gateway speaks the OpenAI API but lives at its own endpoint and
+# authenticates on an `api-key` header rather than `Authorization: Bearer`. A gateway key
+# sent to api.openai.com is rejected as invalid, which is the usual cause of an
+# "invalid API key" error here when the key itself is fine.
+HARVARD_BASE_URL = "https://go.apis.huit.harvard.edu/ais-openai-direct/v2"
+
+
+def resolve_openai_base_url(api_key, config):
+    """
+    Which endpoint this key belongs to.
+
+    In order: OPENAI_BASE_URL from the environment (set it empty to force direct
+    OpenAI), `openai_base_url` in config.yaml, then auto-detect - a key that does not
+    look like an OpenAI `sk-` key is assumed to be a gateway key.
+    """
+    env = os.environ.get("OPENAI_BASE_URL")
+    if env is not None:
+        base = env
+    elif config.get("openai_base_url") is not None:
+        base = config["openai_base_url"]
+    elif api_key and not str(api_key).startswith("sk-"):
+        base = HARVARD_BASE_URL
+    else:
+        base = ""
+    return (base or "").rstrip("/")
+
+
+def build_openai_client(api_key, base_url, **kwargs):
+    """An OpenAI client pointed at the right endpoint, with gateway auth when needed."""
+    opts = {"api_key": api_key, **kwargs}
+    if base_url:
+        opts["base_url"] = base_url + "/"
+        # The gateway authenticates on this header; the SDK's own bearer token is ignored.
+        opts["default_headers"] = {"api-key": api_key}
+    return OpenAI(**opts)
+
+
 # Lazy-loaded novelty engine variables
 REF_FPS_FOR_NOVELTY = None
 NOVELTY_ENGINE_LOADED = False
@@ -127,6 +172,7 @@ class Basic_Agent(PQA_Agent):
         # Use self.config (the dictionary) instead of config (the string path)
         self.backend = self.config.get('openai_backend', 'openai')
         self.openai_api_key = self.config['openai_api_key']
+        self.openai_base_url = resolve_openai_base_url(self.openai_api_key, self.config)
 
         self.pqapi_token = self.config['pqapi_token']
         os.environ['PQA_API_TOKEN'] = self.pqapi_token
@@ -147,6 +193,7 @@ class Basic_Agent(PQA_Agent):
         self.python_repl.locals= self.python_repl.globals
         self.history = [] # Ensure history is initialized
         self.tools_called_in_current_run = []
+        self._tool_outputs_for_summary = []
         self.conversation = [{"role": "system", "content": self.system_prompt if hasattr(self, 'system_prompt') else "System ready."}]
 
         # For ask_user in Gradio
@@ -174,8 +221,8 @@ class Basic_Agent(PQA_Agent):
 
         # Get paths from config if available, otherwise use defaults
         # Note: self.config is available in Basic_Agent
-        novelty_train_data = self.config.get('novelty_train_data', "data/train_data.csv")
-        chembl_antibiotics_data = self.config.get('chembl_antibiotics_data', "data/chembl_antibiotics.csv")
+        novelty_train_data = self.config.get('novelty_train_data', "agent_files/train_data.csv")
+        chembl_antibiotics_data = self.config.get('chembl_antibiotics_data', "agent_files/chembl_antibiotics.csv")
 
         paths_to_try = [
             os.path.join(project_root, novelty_train_data),
@@ -306,12 +353,174 @@ class Basic_Agent(PQA_Agent):
             answer = input("\033[1;34;40mYou: \033[0m")
             return answer
 
+    # A turn that is neither a tool call nor a completion signal is a dead turn: nothing runs,
+    # nothing is appended, and the loop re-queries with an unchanged conversation. At near-zero
+    # temperature the model then repeats itself or - worse - reasons that its tools must be
+    # broken and starts explaining why it cannot proceed.
+    #
+    # Both loops used to allow this. Fleming's had a bare `else: pass`, and the sub-agent chain
+    # below nudged only when the response was EMPTY, so a confidently formatted answer that
+    # simply omitted the `Tool-call:` line got no feedback at all. Observed live: Fleming wrote
+    # a complete final answer on turn 1, had it silently discarded, then spent six turns
+    # asserting its tools were "not available in the current execution environment" before
+    # giving up - having never once attempted a tool call. This is the feedback that was missing.
+    def _no_tool_call_nudge(self, attempt: int = 1, finish_hint: str = "conclude with 'FINISHED'") -> str:
+        """The prod to send after a turn that called no tool and did not finish."""
+        if attempt <= 1:
+            return (
+                "Your last response contained neither a tool call nor a completion signal, so "
+                "nothing was executed and no result was recorded. If you still need evidence, "
+                "make the call in exactly this format, on a single line:\n"
+                "Tool-call: self.<tool_name>(...)\n"
+                f"If you already have everything you need, {finish_hint}. Do not write a final "
+                "answer in place of a tool call - a final answer submitted this way is discarded."
+            )
+        return (
+            f"That is {attempt} turns in a row with no tool call and no completion signal. Your "
+            "tools ARE available in this session; the previous turns simply did not call any. "
+            "Re-read the tool list in your instructions and emit exactly one line beginning with "
+            f"'Tool-call:' now, or {finish_hint} if the evidence you already have is sufficient."
+        )
+
     def FINISHED(self) -> str:
         """
         Tool call to indicate the agent has completed its task and is ready for summarization.
         This replaces the need to say 'finished' or 'fleming finished' in the response text.
         """
         return "TASK_COMPLETED_READY_FOR_SUMMARY"
+
+    def _recent_tool_outputs_for_summary(self, max_entries: int = 6, max_chars: int = 4000) -> str:
+        tool_messages = []
+        for msg in reversed(self.conversation):
+            if not isinstance(msg, dict):
+                continue
+            if msg.get("role") != "system":
+                continue
+            content = str(msg.get("content", "")).strip()
+            if not content:
+                continue
+            tool_messages.append(content)
+            if len(tool_messages) >= max_entries:
+                break
+        tool_messages.reverse()
+        joined = "\n\n".join(tool_messages)
+        if len(joined) > max_chars:
+            joined = joined[-max_chars:]
+        return joined
+
+    def _record_tool_output_for_summary(self, tool_name: str, output, max_chars: int = 3000):
+        tool_name = str(tool_name or "unknown_tool").strip()
+        output_text = "" if output is None else str(output).strip()
+        if not output_text:
+            return
+        if len(output_text) > max_chars:
+            output_text = output_text[:max_chars].rstrip() + "... [truncated]"
+        self._tool_outputs_for_summary.append({
+            "tool": tool_name,
+            "output": output_text,
+        })
+        if len(self._tool_outputs_for_summary) > 16:
+            self._tool_outputs_for_summary = self._tool_outputs_for_summary[-16:]
+
+    def _structured_tool_outputs_for_summary(self, max_entries: int = 12, max_chars: int = 12000) -> str:
+        if not self._tool_outputs_for_summary:
+            return ""
+        chunks = []
+        for item in self._tool_outputs_for_summary[-max_entries:]:
+            chunks.append(f"Tool: {item['tool']}\nOutput:\n{item['output']}")
+        joined = "\n\n".join(chunks)
+        if len(joined) > max_chars:
+            joined = joined[-max_chars:]
+        return joined
+
+    def _needs_quantitative_inhibition_output(self, molecule) -> bool:
+        if self.agent_name != "Inhibition Agent" or molecule is None:
+            return False
+        called = set(getattr(self, "tools_called_in_current_run", []) or [])
+        return (
+            "get_chemprop_prediction_string" not in called
+            and "parallel:get_chemprop_prediction_string" not in called
+        )
+
+    def _required_inhibition_tool_prompt(self, molecule, strict: bool = False) -> str:
+        molecule_repr = repr(molecule)
+        if strict:
+            return (
+                "For this inhibition task, respond with exactly one next step and nothing else: "
+                f"Tool-call: self.get_chemprop_prediction_string({molecule_repr})"
+            )
+        return (
+            "For this inhibition task, before further reasoning or any conclusion, call "
+            f"self.get_chemprop_prediction_string({molecule_repr}) and use that quantitative output "
+            "as your baseline evidence."
+        )
+
+    def _needs_required_admet_outputs(self, molecule) -> bool:
+        if self.agent_name != "ADMET Agent" or molecule is None:
+            return False
+        called = set(getattr(self, "tools_called_in_current_run", []) or [])
+        has_quantitative = any(name in called for name in [
+            "get_admet_prediction_string_summary",
+            "get_admet_prediction_raw",
+            "get_admet_prediction_raw_table",
+            "get_cytotoxicity_copilot_mode",
+            "parallel:get_admet_prediction_string_summary",
+            "parallel:get_admet_prediction_raw",
+            "parallel:get_admet_prediction_raw_table",
+            "parallel:get_cytotoxicity_copilot_mode",
+        ])
+        has_literature = any(name in called for name in [
+            "brief_literature_review",
+            "literature_review",
+            "parallel:brief_literature_review",
+            "parallel:literature_review",
+        ])
+        return not (has_quantitative and has_literature)
+
+    def _needs_optimization_tool_output(self, molecule) -> bool:
+        if self.agent_name != "Optimization Agent" or molecule is None:
+            return False
+        called = set(getattr(self, "tools_called_in_current_run", []) or [])
+        meaningful_tools = {
+            "get_candidates",
+            "get_chemprop_prediction_string",
+            "get_admet_prediction_string_summary",
+            "get_admet_prediction_raw",
+            "get_admet_prediction_raw_table",
+            "get_cytotoxicity_copilot_mode",
+            "get_novelty_and_sascore",
+        }
+        prefixed = {f"parallel:{name}" for name in meaningful_tools}
+        return not (called & (meaningful_tools | prefixed))
+
+    def _required_optimization_tool_prompt(self, molecule, strict: bool = False) -> str:
+        molecule_repr = repr(molecule)
+        if strict:
+            return (
+                "For this optimization task, respond with exactly one next step and nothing else: "
+                f"Tool-call: self.get_candidates({molecule_repr})"
+            )
+        return (
+            "You have not yet run any candidate-generation or scoring tool for this optimization task, so you have "
+            "no real data to summarize. Before concluding, call "
+            f"self.get_candidates({molecule_repr}) (or another relevant scoring/prediction tool) to gather concrete "
+            "results. Do not conclude, use FINISHED, or write a summary based on invented or missing data."
+        )
+
+    def _build_summary_prompt_with_tool_outputs(self):
+        summarization_prompt = self.prompts.get('summarization_prompt', "Please summarize your findings now.")
+        structured_tool_outputs = self._structured_tool_outputs_for_summary()
+        recent_tool_outputs = self._recent_tool_outputs_for_summary(max_entries=8, max_chars=6000)
+        tool_context = structured_tool_outputs or recent_tool_outputs
+        if not tool_context:
+            return summarization_prompt
+        return (
+            f"{summarization_prompt}\n\n"
+            "Use the concrete tool outputs below directly in your summary. "
+            "Do not say results were unavailable if they are present below. "
+            "If quantitative values appear below, preserve them exactly unless clearly labeled as an adjusted interpretation.\n\n"
+            f"Concrete tool outputs from this run:\n{tool_context}"
+        )
 
 
 
@@ -475,6 +684,8 @@ class Basic_Agent(PQA_Agent):
 
         combined = []
         for idx, (call, result) in enumerate(zip(tool_calls, results), start=1):
+            name = _tool_name(call) or f"parallel_tool_{idx}"
+            self._record_tool_output_for_summary(name, result)
             combined.append(f"Parallel tool {idx}: {call}\nResult:\n{result}")
         return "\n\n".join(combined)
 
@@ -485,6 +696,7 @@ class Basic_Agent(PQA_Agent):
         for real-time display. It yields a final dictionary with type "final" when it's done.
         """
         self.tools_called_in_current_run = [] # Reset for each run
+        self._tool_outputs_for_summary = []
         print(f"\033[1;91;40mRunning Agent: {self.agent_name} for molecule: {molecule}\033[0m")
 
         if not hasattr(self, 'conversation') or len(self.conversation) <= 1:
@@ -510,26 +722,85 @@ class Basic_Agent(PQA_Agent):
             else:
                 follow_up_prompt = f"New instruction for molecule {molecule}: {instruction}. Please review the conversation history and continue your work based on this new instruction."
             self.conversation.append({"role": "user", "content": follow_up_prompt})
-        
-        for _ in range(15):
-            response = self.llm_infer(self.conversation, openai_backend=self.openai_backend)
+
+        issued_required_inhibition_nudge = False
+        inhibition_nudge_count = 0
+        # The initial planning turn (turn_idx == 0) always uses the full planner model. Beyond that,
+        # `force_planner_next_turn` is set explicitly at the exact point a re-planning nudge is issued
+        # (e.g. after a failed tool call), rather than inferred by scanning message text for phrases.
+        force_planner_next_turn = False
+        # Consecutive turns that called no tool and did not finish. Reset by any tool call.
+        no_tool_call_turns = 0
+        for turn_idx in range(15):
+            # A stop set while this sub-agent is mid-chain ends it here, so the user does
+            # not wait out the remaining turns before the orchestrator notices.
+            if self.stop_requested():
+                print(f"\033[1;33;40m{self.agent_name}: stop requested - ending.\033[0m")
+                yield {"type": "final",
+                       "content": f"{self.agent_name} stopped at the user's request before "
+                                  f"completing its analysis."}
+                return
+
+            planner_like_turn = turn_idx == 0 or force_planner_next_turn
+            force_planner_next_turn = False
+            response = self.llm_infer(
+                self.conversation,
+                openai_backend=self.openai_backend,
+                model=PLANNER_MODEL if planner_like_turn else MODEL,
+                reasoning_effort=PLANNER_REASONING if planner_like_turn else None,
+            )
             print(f"\033[91m[{self.agent_name}] {response}\033[0m")
             self.conversation.append({"role": "assistant", "content": response})
-            yield ChatMessage(role="assistant", content=f"[{self.agent_name}] {response}")
+            response_text = str(response).strip() if response is not None else ""
+            response_lower = response_text.lower()
+            has_tool_call = 'tool-call:' in response_lower
+            if response_text and response_text != f"[{self.agent_name}]":
+                yield ChatMessage(role="assistant", content=f"[{self.agent_name}] {response_text}")
 
             tool_call_successful = False
-            if 'finished' in response.lower():
+            if (not has_tool_call) and (
+                response_text.startswith(("SUMMARY:", "ANSWER:"))
+                or re.fullmatch(r"finished[.!]?", response_lower) is not None
+            ):
+                if self._needs_quantitative_inhibition_output(molecule):
+                    self.conversation.append({
+                        "role": "user",
+                        "content": self._required_inhibition_tool_prompt(molecule, strict=inhibition_nudge_count > 0)
+                    })
+                    issued_required_inhibition_nudge = True
+                    inhibition_nudge_count += 1
+                    continue
+                if self._needs_required_admet_outputs(molecule):
+                    self.conversation.append({
+                        "role": "user",
+                        "content": "You are concluding before obtaining the required ADMET evidence. Before concluding, make sure you have both quantitative ADMET outputs and a literature review result in this run, then use those concrete outputs in your reasoning."
+                    })
+                    continue
+                if self._needs_optimization_tool_output(molecule):
+                    self.conversation.append({
+                        "role": "user",
+                        "content": self._required_optimization_tool_prompt(molecule, strict=False)
+                    })
+                    continue
                 print(f"\033[1;33;40m{self.agent_name} finished. Generating final summary.\033[0m")
-                summarization_prompt = self.prompts.get('summarization_prompt', "Please summarize your findings now.")
+                summarization_prompt = self._build_summary_prompt_with_tool_outputs()
                 self.conversation.append({"role": "user", "content": summarization_prompt})
                 
-                final_summary = self.llm_infer(self.conversation, reasoning_effort='low')
+                final_summary = self.llm_infer(
+                    self.conversation,
+                    model=PLANNER_MODEL,
+                    reasoning_effort=PLANNER_REASONING,
+                    max_tokens=2500,
+                )
                 self.latest_final_response = final_summary
                 # Yield final result as a dictionary instead of returning
                 yield {"type": "final", "content": final_summary, "tools_used": self.tools_called_in_current_run}
                 return
-            if 'tool-call:' in response.lower():
+            if has_tool_call:
+                no_tool_call_turns = 0
                 try:
+                    tool_name_match = re.search(r"self\.(\w+)\s*\(", response)
+                    current_tool_name = tool_name_match.group(1) if tool_name_match else "unknown_tool"
                     function_response = self.run_function(response)
                     if function_response is not None:
                         tool_call_successful = True
@@ -553,12 +824,37 @@ class Basic_Agent(PQA_Agent):
                             # Continue processing after user input is handled
                             continue
                         elif function_response == "TASK_COMPLETED_READY_FOR_SUMMARY":
+                            if self._needs_quantitative_inhibition_output(molecule):
+                                self.conversation.append({
+                                    "role": "user",
+                                    "content": self._required_inhibition_tool_prompt(molecule, strict=True)
+                                })
+                                issued_required_inhibition_nudge = True
+                                inhibition_nudge_count += 1
+                                continue
+                            if self._needs_required_admet_outputs(molecule):
+                                self.conversation.append({
+                                    "role": "user",
+                                    "content": "You called FINISHED before obtaining the required ADMET evidence. Before concluding, make sure you have both quantitative ADMET outputs and a literature review result in this run, then use those concrete outputs in your reasoning."
+                                })
+                                continue
+                            if self._needs_optimization_tool_output(molecule):
+                                self.conversation.append({
+                                    "role": "user",
+                                    "content": self._required_optimization_tool_prompt(molecule, strict=True)
+                                })
+                                continue
                             # FINISHED tool call was used - trigger summarization
                             print(f"\033[1;33;40m{self.agent_name} FINISHED tool call detected. Generating final summary.\033[0m")
-                            summarization_prompt = self.prompts.get('summarization_prompt', "Please summarize your findings now.")
+                            summarization_prompt = self._build_summary_prompt_with_tool_outputs()
                             self.conversation.append({"role": "user", "content": summarization_prompt})
                             
-                            final_summary = self.llm_infer(self.conversation, reasoning_effort='low')
+                            final_summary = self.llm_infer(
+                                self.conversation,
+                                model=PLANNER_MODEL,
+                                reasoning_effort=PLANNER_REASONING,
+                                max_tokens=2500,
+                            )
                             self.latest_final_response = final_summary
                             # Yield final result as a dictionary instead of returning
                             yield {"type": "final", "content": final_summary, "tools_used": self.tools_called_in_current_run}
@@ -577,8 +873,20 @@ class Basic_Agent(PQA_Agent):
                             pass
 
                         tool_result = str(function_response)
-                        yield ChatMessage(role="assistant", content=f"[{self.agent_name} Tool Result] {tool_result}")
+                        tool_result_stripped = tool_result.strip()
+                        if tool_result_stripped:
+                            yield ChatMessage(role="assistant", content=f"[{self.agent_name} Tool Result] {tool_result_stripped}")
+                        self._record_tool_output_for_summary(current_tool_name, tool_result)
                         self.conversation.append({"role": "system", "content": tool_result})
+                        issued_required_inhibition_nudge = False
+                        inhibition_nudge_count = 0
+                        if self._needs_quantitative_inhibition_output(molecule):
+                            self.conversation.append({
+                                "role": "user",
+                                "content": self._required_inhibition_tool_prompt(molecule, strict=True)
+                            })
+                            issued_required_inhibition_nudge = True
+                            inhibition_nudge_count += 1
                         
                 except Exception as e:
                     error_msg = f"Error executing tool: {e}"
@@ -587,13 +895,146 @@ class Basic_Agent(PQA_Agent):
                     self.conversation.append({"role": "system", "content": error_msg})
                     replan_prompt = "The previous tool call failed. Please re-evaluate your plan. You can try the tool again with different parameters, or try a different tool."
                     self.conversation.append({"role": "user", "content": replan_prompt})
+                    force_planner_next_turn = True
+            elif self._needs_quantitative_inhibition_output(molecule) and not issued_required_inhibition_nudge:
+                self.conversation.append({
+                    "role": "user",
+                    "content": self._required_inhibition_tool_prompt(molecule, strict=inhibition_nudge_count > 0)
+                })
+                issued_required_inhibition_nudge = True
+                inhibition_nudge_count += 1
+            elif self._needs_required_admet_outputs(molecule):
+                # This mirrors the inhibition/optimization branches above but was previously missing,
+                # which let the ADMET agent silently loop on empty/non-actionable mini-model responses
+                # (same conversation state, near-zero temperature -> same empty response every turn)
+                # until the hard turn limit was hit, without ever calling a quantitative ADMET tool.
+                self.conversation.append({
+                    "role": "user",
+                    "content": (
+                        "Your last response did not contain a tool call, a FINISHED call, or a summary. "
+                        "Before concluding, call a quantitative ADMET tool (e.g. "
+                        "self.get_admet_prediction_string_summary(...) or self.get_admet_prediction_raw_table(...)) "
+                        "and a literature-review tool, then use those concrete outputs in your reasoning."
+                    )
+                })
+                force_planner_next_turn = True
+            elif self._needs_optimization_tool_output(molecule):
+                self.conversation.append({
+                    "role": "user",
+                    "content": self._required_optimization_tool_prompt(molecule, strict=False)
+                })
+            elif not response_text:
+                # Generic guard for any other agent type: an empty response with no tool call and no
+                # finish signal would otherwise loop unchanged and silently burn the whole turn budget.
+                self.conversation.append({
+                    "role": "user",
+                    "content": (
+                        "Your last response was empty. Please either make a tool call in the exact format "
+                        "'Tool-call: self.<tool_name>(...)', or if you already have everything you need, "
+                        "conclude with 'FINISHED'."
+                    )
+                })
+                force_planner_next_turn = True
+            else:
+                # Catch-all: a NON-empty response with no tool call and no finish signal, from an
+                # agent with none of the specific required-output guards above. Every branch before
+                # this one is conditional on the agent type or on the response being empty, so this
+                # case - the common one - previously fell through and the turn was spent in silence.
+                no_tool_call_turns += 1
+                self.conversation.append({
+                    "role": "user",
+                    "content": self._no_tool_call_nudge(no_tool_call_turns),
+                })
+                force_planner_next_turn = True
             
-         
+        
         
         print(f"\033[1;33;40m{self.agent_name} reached turn limit. Forcing summary.\033[0m")
-        summarization_prompt = self.prompts.get('summarization_prompt', "Please summarize your findings now.")
+        if self._needs_quantitative_inhibition_output(molecule):
+            self.conversation.append({
+                "role": "user",
+                "content": self._required_inhibition_tool_prompt(molecule, strict=True)
+            })
+            response = self.llm_infer(self.conversation, openai_backend=self.openai_backend)
+            self.conversation.append({"role": "assistant", "content": response})
+            if 'tool-call:' in str(response).lower():
+                try:
+                    function_response = self.run_function(response)
+                except Exception as e:
+                    function_response = None
+                    yield ChatMessage(role="system", content=f"[{self.agent_name} Error] Error executing tool: {e}")
+                if function_response is not None and not inspect.isgenerator(function_response):
+                    tool_result = str(function_response).strip()
+                    if tool_result:
+                        yield ChatMessage(role="assistant", content=f"[{self.agent_name} Tool Result] {tool_result}")
+                        self.conversation.append({"role": "system", "content": tool_result})
+                        self._record_tool_output_for_summary("get_chemprop_prediction_string", tool_result)
+        if self._needs_required_admet_outputs(molecule):
+            self.conversation.append({
+                "role": "user",
+                "content": "You have reached the turn limit without gathering the required ADMET evidence. Call the missing quantitative ADMET and literature-review tools now, then use those concrete outputs before concluding."
+            })
+            response = self.llm_infer(self.conversation, openai_backend=self.openai_backend)
+            self.conversation.append({"role": "assistant", "content": response})
+            if 'tool-call:' in str(response).lower():
+                try:
+                    function_response = self.run_function(response)
+                except Exception as e:
+                    function_response = None
+                    yield ChatMessage(role="system", content=f"[{self.agent_name} Error] Error executing tool: {e}")
+                if function_response is not None:
+                    if inspect.isgenerator(function_response):
+                        final_tool_result = None
+                        try:
+                            while True:
+                                intermediate_step = next(function_response)
+                                yield ChatMessage(role="assistant", content=f"[{self.agent_name} Progress] {intermediate_step}")
+                        except StopIteration as e:
+                            final_tool_result = e.value
+                        function_response = final_tool_result
+                    tool_result = "" if function_response is None else str(function_response).strip()
+                    if tool_result:
+                        yield ChatMessage(role="assistant", content=f"[{self.agent_name} Tool Result] {tool_result}")
+                        self.conversation.append({"role": "system", "content": tool_result})
+                        self._record_tool_output_for_summary("admet_turn_limit_recovery", tool_result)
+        if self._needs_optimization_tool_output(molecule):
+            self.conversation.append({
+                "role": "user",
+                "content": "You have reached the turn limit without running any candidate-generation or scoring tool. Call self.get_candidates(...) (or another relevant scoring tool) now and use those concrete outputs before concluding."
+            })
+            response = self.llm_infer(self.conversation, openai_backend=self.openai_backend)
+            self.conversation.append({"role": "assistant", "content": response})
+            if 'tool-call:' in str(response).lower():
+                tool_name_match = re.search(r"self\.(\w+)\s*\(", response)
+                recovered_tool_name = tool_name_match.group(1) if tool_name_match else "optimization_turn_limit_recovery"
+                try:
+                    function_response = self.run_function(response)
+                except Exception as e:
+                    function_response = None
+                    yield ChatMessage(role="system", content=f"[{self.agent_name} Error] Error executing tool: {e}")
+                if function_response is not None:
+                    if inspect.isgenerator(function_response):
+                        final_tool_result = None
+                        try:
+                            while True:
+                                intermediate_step = next(function_response)
+                                yield ChatMessage(role="assistant", content=f"[{self.agent_name} Progress] {intermediate_step}")
+                        except StopIteration as e:
+                            final_tool_result = e.value
+                        function_response = final_tool_result
+                    tool_result = "" if function_response is None else str(function_response).strip()
+                    if tool_result:
+                        yield ChatMessage(role="assistant", content=f"[{self.agent_name} Tool Result] {tool_result}")
+                        self.conversation.append({"role": "system", "content": tool_result})
+                        self._record_tool_output_for_summary(recovered_tool_name, tool_result)
+        summarization_prompt = self._build_summary_prompt_with_tool_outputs()
         self.conversation.append({"role": "user", "content": summarization_prompt})
-        final_summary = self.llm_infer(self.conversation, reasoning_effort='low')
+        final_summary = self.llm_infer(
+            self.conversation,
+            model=PLANNER_MODEL,
+            reasoning_effort=PLANNER_REASONING,
+            max_tokens=2500,
+        )
         self.latest_final_response = final_summary
         # Yield final result as a dictionary instead of returning
         yield {"type": "final", "content": final_summary, "tools_used": self.tools_called_in_current_run}
@@ -633,7 +1074,7 @@ class Basic_Agent(PQA_Agent):
 
         question = question + f"Here's the input from a separate literature review, though please be sure to conduct your own review and synthesize the two: {pqa_input}"+ "Make sure to return citations and the working link to the sources"
         # Use the OpenAI API to perform the literature review
-        client = OpenAI(api_key=self.openai_api_key)
+        client = build_openai_client(self.openai_api_key, self.openai_base_url)
         response = client.responses.create(
             model=MODEL,
             input=question,
@@ -649,7 +1090,7 @@ class Basic_Agent(PQA_Agent):
     def brief_literature_review(self, question):
         # uses OAI websearch to do the lit review 
         try:
-            client = OpenAI(api_key=self.openai_api_key)
+            client = build_openai_client(self.openai_api_key, self.openai_base_url)
             question = question + "Make sure to return citations and the working link to the sources"
             response = client.responses.create(
                 model=MODEL,
@@ -673,6 +1114,27 @@ class Basic_Agent(PQA_Agent):
             return f"Unable to complete literature review for: {question}. Error: {error_msg}. The agent should proceed with available information or try alternative approaches."
     
   
+    def stop_requested(self):
+        """True when the UI has asked this agent, or its parent, to stop.
+
+        Checked between LLM calls rather than inside them: an in-flight request cannot be
+        cancelled without threading cancellation into the HTTP client, so a stop pressed
+        mid-call lands when that call returns.
+        """
+        return bool(getattr(self, "_interrupt_requested", False))
+
+    def request_stop(self, value=True):
+        """Set the stop flag on this agent and every sub-agent it owns."""
+        self._interrupt_requested = bool(value)
+        for attr in dir(self):
+            if not attr.endswith("_agent"):
+                continue
+            child = getattr(self, attr, None)
+            if hasattr(child, "request_stop") and child is not self:
+                child.request_stop(value)
+            elif child is not None and hasattr(child, "_interrupt_requested"):
+                child._interrupt_requested = bool(value)
+
     def llm_infer(self, conversation, temp = 0.000000001, max_tokens = 1000, image = None, role = None, openai_backend = 'openai', model =MODEL, reasoning_effort=None):
 
         while True:
@@ -685,9 +1147,7 @@ class Basic_Agent(PQA_Agent):
             except Exception:
                 pass
 
-            client = OpenAI(
-                api_key=self.openai_api_key 
-            )
+            client = build_openai_client(self.openai_api_key, self.openai_base_url)
             if reasoning_effort is not None:
                 response = client.chat.completions.create(
                     model=model,
@@ -700,7 +1160,8 @@ class Basic_Agent(PQA_Agent):
                     messages=conversation,
                 )
 
-            if "I'm sorry, I can't assist with that" in response.choices[0].message.content or "I'm unable to view the image" in response.choices[0].message.content or "I'm unable to provide a definitive answer" in response.choices[0].message.content:
+            _raw_content = response.choices[0].message.content or ""
+            if "I'm sorry, I can't assist with that" in _raw_content or "I'm unable to view the image" in _raw_content or "I'm unable to provide a definitive answer" in _raw_content:
                     # Log output size for this attempt
                     try:
                         elapsed = time.time() - start_time
@@ -759,6 +1220,10 @@ class Basic_Agent(PQA_Agent):
                     return output_text
                     
     def run_function(self, output):
+        # Parsing failures (no "Tool-call:" section, empty/placeholder call, malformed quoting) mean
+        # there was no real tool call to run, so we return None quietly. Execution failures (the parsed
+        # call raising, e.g. a typo'd or nonexistent tool name) are a real error and are re-raised so the
+        # caller can surface them to the agent instead of silently doing nothing for that turn.
         try:
             # Find 'Tool-call:' case-insensitively
             m = re.search(r'Tool-call\s*:', output, flags=re.IGNORECASE)
@@ -791,18 +1256,42 @@ class Basic_Agent(PQA_Agent):
 
             if tool_call_str.lower() in ['none', 'no tool call', '', 'null', 'n/a']:
                 return None
-
-            if hasattr(self, 'tools_called_in_current_run'):
-                tool_name_match = re.match(r'self\.(\w+)\(', tool_call_str)
-                if tool_name_match:
-                    tool_name = tool_name_match.group(1)
-                    self.tools_called_in_current_run.append(tool_name)
-
-            res = eval(tool_call_str)
-            return res
         except Exception as e:
             print(f"Error in parsing tool call in {output} got this error {e}")
             return None
+
+        if hasattr(self, 'tools_called_in_current_run'):
+            tool_name_match = re.match(r'self\.(\w+)\(', tool_call_str)
+            if tool_name_match:
+                tool_name = tool_name_match.group(1)
+                self.tools_called_in_current_run.append(tool_name)
+
+        try:
+            res = eval(tool_call_str)
+        except Exception as first_exc:
+            repaired_tool_call = self._repair_parallel_tool_call_syntax(tool_call_str)
+            if repaired_tool_call != tool_call_str:
+                res = eval(repaired_tool_call)
+            else:
+                print(f"Error executing tool call '{tool_call_str}': {first_exc}")
+                raise RuntimeError(f"Tool call '{tool_call_str}' failed: {first_exc}") from first_exc
+        return res
+
+    def _repair_parallel_tool_call_syntax(self, tool_call_str: str) -> str:
+        if "self.run_parallel_tools" not in str(tool_call_str):
+            return tool_call_str
+        call_str = str(tool_call_str).strip()
+        max_workers_match = re.search(r"max_workers\s*=\s*(\d+)", call_str)
+        max_workers = max_workers_match.group(1) if max_workers_match else "3"
+
+        list_match = re.search(r"run_parallel_tools\(\[(.*)\](?:,\s*max_workers\s*=\s*\d+)?\s*\)$", call_str)
+        inner = list_match.group(1) if list_match else call_str
+        candidate_calls = re.findall(r"self\.\w+\([^)]*\)", inner)
+        candidate_calls = [call for call in candidate_calls if not call.startswith("self.run_parallel_tools")]
+        if not candidate_calls:
+            return tool_call_str
+        repaired_list = repr(candidate_calls)
+        return f"self.run_parallel_tools({repaired_list}, max_workers={max_workers})"
 
     def run_python_code(self, python_code):
         """Executes Python code and returns the output. 
@@ -914,11 +1403,18 @@ class Basic_Agent(PQA_Agent):
                 all_descriptions.append(f"Molecule {i+1}: Invalid SMILES string: {smiles}")
                 continue
                 
-            image = self.generate_image(smiles)
             iupac = iupac_names[i] if i < len(iupac_names) else f"Error getting IUPAC name for {smiles}"
-            
-            # Prepare prompt message
-            prompt = description_system_prompt + f"\n Here is the SMILES: {smiles} \n Here is the calculated IUPAC name: {iupac}."
+            iupac_unavailable = (
+                iupac.startswith("Error") or iupac.startswith("IUPAC conversion is unavailable")
+            )
+
+            # Prepare prompt message. If IUPAC generation failed/is unavailable, don't hand the
+            # LLM a bogus "IUPAC name" string (e.g. an exception message) - just ask it to reason
+            # from the SMILES alone instead.
+            if iupac_unavailable:
+                prompt = description_system_prompt + f"\n Here is the SMILES: {smiles} \n No IUPAC name is available for this molecule ({iupac}); reason directly from the SMILES structure instead."
+            else:
+                prompt = description_system_prompt + f"\n Here is the SMILES: {smiles} \n Here is the calculated IUPAC name: {iupac}."
             
             messages = [
                 {
@@ -930,12 +1426,17 @@ class Basic_Agent(PQA_Agent):
                     "content": prompt
                 }
             ]
-            description = self.llm_infer(messages, model=MODEL) 
+            # Use the strong/planner model (not the mini model) for molecule descriptions,
+            # since this is a reasoning-heavy task done relatively infrequently per molecule.
+            description = self.llm_infer(messages, model=PLANNER_MODEL) 
             all_descriptions.append(f"Molecule {i+1} ({smiles}): {description}")
         
         return "\n\n".join(all_descriptions)
     
     def get_iupac(self, smiles):
+        if converter is None:
+            unavailable_msg = "IUPAC conversion is unavailable (missing `chemicalconverters`)."
+            return [unavailable_msg] * len(smiles) if isinstance(smiles, list) else unavailable_msg
         # Handle batch processing for lists of SMILES
         if isinstance(smiles, list):
             try:
@@ -1601,6 +2102,3 @@ def is_likely_smiles(candidate):
         return False
     
     return True
-
-
-

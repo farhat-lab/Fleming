@@ -1,0 +1,13 @@
+endpoint,comparison,n,delta_r,ci_low,ci_high,excludes_zero,figure
+Selectivity (% inhibition − % HepG2 kill),Fleming plausibility score minus LLM (GPT-5.6 Sol + web search) plausibility,350,0.078,-0.032,0.184,False,Fig. 1
+Selectivity (% inhibition − % HepG2 kill),Fleming plausibility score minus D-MPNN p_TB,350,0.1,-0.006,0.207,False,Fig. 1
+Selectivity (% inhibition − % HepG2 kill),Fleming plausibility score minus D-MPNN p_TB x (1 - p_HepG2),350,0.004,-0.056,0.065,False,Fig. 1
+Drug-likeness (QED),Fleming plausibility score minus LLM (GPT-5.6 Sol + web search) plausibility,350,0.185,0.068,0.298,True,Fig. 1
+Drug-likeness (QED),Fleming plausibility score minus D-MPNN p_TB,350,0.405,0.304,0.499,True,Fig. 1
+Drug-likeness (QED),Fleming plausibility score minus D-MPNN p_TB x (1 - p_HepG2),350,0.064,-0.001,0.129,False,Fig. 1
+Freedom from alerts (−PAINS/BRENK count),Fleming plausibility score minus LLM (GPT-5.6 Sol + web search) plausibility,350,0.187,0.078,0.297,True,Fig. 1
+Freedom from alerts (−PAINS/BRENK count),Fleming plausibility score minus D-MPNN p_TB,350,0.245,0.135,0.351,True,Fig. 1
+Freedom from alerts (−PAINS/BRENK count),Fleming plausibility score minus D-MPNN p_TB x (1 - p_HepG2),350,0.106,0.031,0.184,True,Fig. 1
+Synthetic accessibility (-SAscore),Fleming plausibility score minus LLM (GPT-5.6 Sol + web search) plausibility,350,0.017,-0.117,0.162,False,Extended Data
+Synthetic accessibility (-SAscore),Fleming plausibility score minus D-MPNN p_TB,350,-0.057,-0.15,0.041,False,Extended Data
+Synthetic accessibility (-SAscore),Fleming plausibility score minus D-MPNN p_TB x (1 - p_HepG2),350,0.101,0.047,0.157,True,Extended Data

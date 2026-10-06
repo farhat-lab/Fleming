@@ -1,7 +1,7 @@
 import re 
 import gradio as gr
 from gradio import ChatMessage
-from utils.utils import Basic_Agent
+from utils.utils import Basic_Agent, MODEL, PLANNER_MODEL, PLANNER_REASONING
 from utils.inhibition_utils import InhibitionUtils
 from utils.admet_utils import ADMETUtils
 from utils.optimization_utils import OptimizationUtils
@@ -59,11 +59,18 @@ class Fleming(Basic_Agent):
         self._paused_agent_generator = None
         self._paused_agent_context = {}
         self._original_user_query = None  # Store the original user query
+        self._active_plan_requirements = []
+        self._completed_plan_requirements = set()
+        self._active_plan_text = ""
+
+    MAX_PARALLEL_AGENTS = 3
 
     def run_parallel_agents(self, agent_generators):
         """
         Runs multiple agent generators in parallel.
         Usage: self.run_parallel_agents([self.admet_agent(molecule, instruction), self.inhibition_agent(...)])
+        A maximum of self.MAX_PARALLEL_AGENTS subagents can be run at once; any extras beyond that
+        limit are dropped (with a warning) rather than run.
         """
         import threading
         import queue
@@ -71,13 +78,68 @@ class Fleming(Basic_Agent):
         # Handle single generator case just in case
         if not isinstance(agent_generators, list):
             agent_generators = [agent_generators]
-            
+
+        if len(agent_generators) > self.MAX_PARALLEL_AGENTS:
+            dropped_count = len(agent_generators) - self.MAX_PARALLEL_AGENTS
+            for extra_gen in agent_generators[self.MAX_PARALLEL_AGENTS:]:
+                # These are already-created generator objects (calling self.xxx_agent(...) doesn't
+                # execute anything until iterated), so close them instead of just discarding them.
+                close = getattr(extra_gen, 'close', None)
+                if callable(close):
+                    try:
+                        close()
+                    except Exception:
+                        pass
+            agent_generators = agent_generators[:self.MAX_PARALLEL_AGENTS]
+            yield ChatMessage(
+                role="system",
+                content=(
+                    f"Warning: run_parallel_agents received more than {self.MAX_PARALLEL_AGENTS} subagent calls. "
+                    f"Only the first {self.MAX_PARALLEL_AGENTS} will run; the remaining {dropped_count} were "
+                    f"dropped. Split extra independent work into a follow-up run_parallel_agents call."
+                ),
+            )
+
         output_queue = queue.Queue()
         active_threads = 0
         final_results = [None] * len(agent_generators)
         
         def run_agent(idx, generator):
             try:
+                # Guard against malformed tool calls where a plain string (or some other
+                # non-generator value) ended up in the generators list instead of an actual
+                # subagent call, e.g. self.admet_agent(...). Iterating over a string yields
+                # it one character at a time, which previously spammed the chat with a
+                # separate single-character message per character and looked like a crash.
+                if isinstance(generator, (str, bytes)):
+                    output_queue.put(ChatMessage(
+                        role="system",
+                        content=(
+                            f"Warning: Parallel agent slot {idx} did not receive a valid subagent call "
+                            f"(got a plain string instead of e.g. self.admet_agent(...) or "
+                            f"self.inhibition_agent(...)). Skipping this slot. Raw value: {generator!r}"
+                        ),
+                    ))
+                    final_results[idx] = {
+                        "type": "final",
+                        "content": "Skipped: this parallel slot received a plain string instead of a subagent call.",
+                        "tools_used": [],
+                    }
+                    return
+                if not (inspect.isgenerator(generator) or hasattr(generator, '__next__')):
+                    output_queue.put(ChatMessage(
+                        role="system",
+                        content=(
+                            f"Warning: Parallel agent slot {idx} did not receive a valid subagent generator "
+                            f"(got {type(generator).__name__}). Skipping this slot."
+                        ),
+                    ))
+                    final_results[idx] = {
+                        "type": "final",
+                        "content": "Skipped: this parallel slot did not receive a valid subagent call.",
+                        "tools_used": [],
+                    }
+                    return
                 for item in generator:
                     if isinstance(item, dict) and item.get("type") == "final":
                         final_results[idx] = item
@@ -123,6 +185,177 @@ class Fleming(Basic_Agent):
         
         yield {"type": "final", "content": combined_summary, "tools_used": all_tools_used}
 
+    def _extract_plan_requirements(self, plan_text: str):
+        if not plan_text:
+            return []
+        plan_lower = plan_text.lower()
+        candidate_lines = []
+        in_mermaid = False
+        for raw_line in plan_text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            if line.startswith("```mermaid"):
+                in_mermaid = True
+                continue
+            if in_mermaid and line.startswith("```"):
+                in_mermaid = False
+                continue
+            if re.match(r"^\d+\.", line):
+                candidate_lines.append(line.lower())
+                continue
+            if in_mermaid:
+                candidate_lines.append(line.lower())
+
+        if not candidate_lines:
+            candidate_lines = [plan_lower]
+
+        requirement_specs = [
+            ("inhibition", "Run inhibition analysis", [
+                "inhibition agent", "self.inhibition_agent", "get_chemprop_prediction_string", "inhibition prediction"
+            ]),
+            ("admet", "Run ADMET analysis", [
+                "admet agent", "self.admet_agent", "admet prediction", "cytotoxicity", "bbbp", "solubility", "side effect"
+            ]),
+            ("literature", "Run literature review", [
+                "literature review", "brief literature", "self.brief_literature_review", "pqa", "paperqa", "literature search"
+            ]),
+            ("describe", "Describe molecule for downstream analysis", [
+                "describe molecule", "self.describe_molecule", "molecular description"
+            ]),
+            ("display", "Display relevant molecules", [
+                "display smiles", "display molecule", "show molecule", "render molecule", "visual interface", "display_smiles_batch"
+            ]),
+            ("optimization", "Run optimization analysis", [
+                "optimization agent", "self.optimization_agent", "optimiz"
+            ]),
+            ("generation", "Run molecule generation", [
+                "molecular generation agent", "self.generate_agent", "generate molecule"
+            ]),
+        ]
+        requirements = []
+        seen = set()
+        for key, label, patterns in requirement_specs:
+            if key in seen:
+                continue
+            matched = False
+            for line in candidate_lines:
+                if any(pattern in line for pattern in patterns):
+                    if key == "optimization":
+                        if any(neg in line for neg in [
+                            "no optimization", "not optimize", "do not optimize", "without optimization",
+                            "optimization not required", "skip optimization"
+                        ]):
+                            continue
+                    matched = True
+                    break
+            if matched:
+                requirements.append({"key": key, "label": label})
+                seen.add(key)
+
+        original_query_lower = (self._original_user_query or "").lower()
+        optimization_intent = any(token in original_query_lower for token in [
+            "optimiz", "improve", "neighbor", "analogs", "analog", "modify", "edit", "generate", "design"
+        ])
+        if not optimization_intent:
+            requirements = [req for req in requirements if req["key"] != "optimization"]
+
+        return requirements
+
+    def _mark_plan_requirement_complete(self, requirement_key: str):
+        if requirement_key:
+            self._completed_plan_requirements.add(requirement_key)
+
+    def _mark_plan_completion_from_tools(self, tools_used):
+        if not tools_used:
+            return
+        for tool_name in tools_used:
+            tool_name = str(tool_name)
+            if any(name in tool_name for name in ["inhibition_agent", "get_chemprop_prediction_string"]):
+                self._mark_plan_requirement_complete("inhibition")
+            if any(name in tool_name for name in [
+                "admet_agent", "get_admet_prediction", "get_cytotoxicity", "get_bbbp_prediction",
+                "get_solubility_prediction", "get_side_effect_prediction"
+            ]):
+                self._mark_plan_requirement_complete("admet")
+            if any(name in tool_name for name in [
+                "brief_literature_review", "literature_review", "pqa_molecular_analysis", "run_molecule"
+            ]):
+                self._mark_plan_requirement_complete("literature")
+            if "describe_molecule" in tool_name:
+                self._mark_plan_requirement_complete("describe")
+            if any(name in tool_name for name in ["display_smiles", "display_smiles_batch"]):
+                self._mark_plan_requirement_complete("display")
+            if "optimization_agent" in tool_name:
+                self._mark_plan_requirement_complete("optimization")
+            if "generate_agent" in tool_name:
+                self._mark_plan_requirement_complete("generation")
+
+    def _get_unmet_plan_requirements(self):
+        return [
+            requirement for requirement in self._active_plan_requirements
+            if requirement["key"] not in self._completed_plan_requirements
+        ]
+
+    def _get_plan_blocking_message(self):
+        unmet = self._get_unmet_plan_requirements()
+        if not unmet:
+            return None
+        remaining = "; ".join(req["label"] for req in unmet[:5])
+        return (
+            "You are attempting to conclude before completing the planned dependency graph. "
+            f"Remaining required planned steps: {remaining}. "
+            "Either continue execution based on the current plan, or output `PLAN_UPDATE:` followed by a revised numbered plan and optional Mermaid dependency graph if the plan should change, "
+            "or output `BLOCKED:` followed by a concise user-facing explanation if the remaining steps cannot be completed with the available tools/results. "
+            "Do not use FINISHED or provide a final answer yet unless you are using the BLOCKED path."
+        )
+
+    def _get_plan_gate_notice(self):
+        """Short, human-readable version of the plan-gate nudge for the reasoning-trace panel
+        (the full instruction in `_get_plan_blocking_message` is what actually goes to the model)."""
+        unmet = self._get_unmet_plan_requirements()
+        if not unmet:
+            return None
+        remaining = "; ".join(req["label"] for req in unmet[:5])
+        return f"Plan not yet complete — continuing with remaining steps: {remaining}."
+
+    def _extract_tool_names_from_call(self, tool_call_str: str):
+        if not tool_call_str:
+            return []
+        matches = re.findall(r"self\.(\w+)\s*\(", tool_call_str)
+        return matches
+
+    def _response_is_plan_update(self, response_text: str) -> bool:
+        if not response_text:
+            return False
+        stripped = response_text.strip()
+        lowered = stripped.lower()
+        return lowered.startswith("plan_update:") or (
+            "```mermaid" in lowered and re.search(r"\b1\.\s", stripped) is not None
+        )
+
+    def _extract_plan_update_text(self, response_text: str) -> str:
+        stripped = (response_text or "").strip()
+        if stripped.lower().startswith("plan_update:"):
+            return stripped.split(":", 1)[1].strip()
+        return stripped
+
+    def _apply_plan_update(self, plan_text: str):
+        if not plan_text:
+            return None
+        new_requirements = self._extract_plan_requirements(plan_text)
+        valid_completed = {req["key"] for req in new_requirements}
+        self._completed_plan_requirements &= valid_completed
+        self._active_plan_requirements = new_requirements
+        self._active_plan_text = plan_text
+        return plan_text
+
+    def _response_is_blocked(self, response_text: str) -> bool:
+        if not response_text:
+            return False
+        lowered = response_text.strip().lower()
+        return lowered.startswith("blocked:") or lowered.startswith("incomplete:")
+
     def batchmode_provided_csv(self, csv_path: str, steps_to_run: Optional[List[str]] = None, top_n_to_optimize: int = 100, top_n_to_plausibility: int = 100):
         """
         Runs the batch processing pipeline on a user-provided CSV file.
@@ -157,6 +390,16 @@ class Fleming(Basic_Agent):
         Helper to process a sub-agent's generator, handling pauses and yields.
         Yields UI updates. Returns the final summary from the sub-agent.
         """
+        def _normalize_subagent_chat_message(message):
+            if not isinstance(message, ChatMessage):
+                return message
+            content = getattr(message, "content", "")
+            content = "" if content is None else str(content).strip()
+            bare_agent_label = f"[{agent_name}]"
+            if not content or content == bare_agent_label:
+                return None
+            return ChatMessage(role=message.role, content=content)
+
         while True:
             try:
                 sub_output = next(agent_generator)
@@ -176,9 +419,7 @@ class Fleming(Basic_Agent):
                 elif isinstance(sub_output, dict) and sub_output.get("type") == "final":
                     subagent_summary = sub_output["content"]
                     tools_used = sub_output.get("tools_used", [])
-                    # Show final sub-agent results in the main (left) chat, and keep the inner (middle)
-                    # chat focused on intermediate reasoning/steps.
-                    yield 'main', ChatMessage(role="assistant", content=f"[{agent_name} Summary] {subagent_summary}")
+                    yield 'inner', ChatMessage(role="assistant", content=f"[{agent_name} Summary] {subagent_summary}")
                     yield 'inner', ChatMessage(role="system", content=f"[Sub-agent complete] {agent_name} returned a summary and {len(tools_used)} tool(s) used.")
                     return {"content": subagent_summary, "tools_used": tools_used}
 
@@ -190,7 +431,9 @@ class Fleming(Basic_Agent):
                     yield 'inner', ChatMessage(role="assistant", content=f"[{agent_name}] Displayed {len(labels)} molecule(s): {', '.join(labels)}")
 
                 else:
-                    yield 'inner', sub_output
+                    normalized_output = _normalize_subagent_chat_message(sub_output)
+                    if normalized_output is not None:
+                        yield 'inner', normalized_output
 
             except StopIteration:
                 yield 'inner', ChatMessage(role="system", content=f"Sub-agent {agent_name} finished unexpectedly without a summary.")
@@ -210,7 +453,30 @@ class Fleming(Basic_Agent):
                 summarization_prompt = summarization_prompt_template
                 
             self.conversation.append({"role": "user", "content": summarization_prompt})
-            final_summary = self.llm_infer(self.conversation)
+            # Fleming's final, user-facing answer synthesizes every sub-agent's results (quantitative
+            # values, literature links, etc.) - always use the flagship planner model.
+            final_summary = self.llm_infer(
+                self.conversation,
+                model=PLANNER_MODEL,
+                reasoning_effort=PLANNER_REASONING,
+                max_tokens=3000,
+            )
+            # The summarizer sometimes echoes the tool-call syntax that fills the rest of
+            # the conversation instead of writing prose, which silently makes a bare
+            # "Tool-call: self.FINISHED()" the user-facing answer and discards the whole
+            # workup. Ask once more, explicitly, before accepting it.
+            if re.match(r'\s*Tool-call\s*:', final_summary or "", flags=re.IGNORECASE):
+                print(f"\033[1;33;40m Summary was a tool call - re-asking.\033[0m")
+                self.conversation.append({"role": "user", "content": (
+                    "That was a tool call, not a summary. The task is already finished. "
+                    "Write the final answer now as prose, including every value the user "
+                    "asked for, and do not emit a 'Tool-call:' line.")})
+                final_summary = self.llm_infer(
+                    self.conversation,
+                    model=PLANNER_MODEL,
+                    reasoning_effort=PLANNER_REASONING,
+                    max_tokens=3000,
+                )
             self.conversation.append({"role": "assistant", "content": final_summary})
             self.latest_final_response = final_summary
             return final_summary
@@ -232,8 +498,42 @@ class Fleming(Basic_Agent):
         """
         Main chat function for Fleming using a robust, sequential ReAct loop.
         """
+        last_emitted_main = history[-1] if history else None
+        last_emitted_inner = None
+        # Round 0 always plans with the full model. Beyond that, `force_planner_next_round` is set
+        # explicitly at the exact point a re-planning nudge is issued (plan-gate block, plan update,
+        # lost sub-task context), rather than inferred by scanning message text for phrases.
+        force_planner_next_round = False
+        # Consecutive rounds that called no tool and did not finish. Reset by any tool call.
+        no_tool_call_rounds = 0
+
+        def _compact_text(value, max_chars=1200):
+            text = str(value).strip()
+            if len(text) <= max_chars:
+                return text
+            return text[:max_chars].rstrip() + "... [truncated]"
+
+        def _emit_chat(panel, chat_message):
+            nonlocal last_emitted_main, last_emitted_inner
+            last_item = last_emitted_main if panel == "main" else last_emitted_inner
+            if (
+                isinstance(last_item, ChatMessage)
+                and isinstance(chat_message, ChatMessage)
+                and getattr(last_item, "role", None) == getattr(chat_message, "role", None)
+                and getattr(last_item, "content", None) == getattr(chat_message, "content", None)
+            ):
+                return
+            if panel == "main":
+                last_emitted_main = chat_message
+            else:
+                last_emitted_inner = chat_message
+            yield panel, chat_message
+
         # Set the flag on the optimization agent
         self.optimization_agent.set_use_synspace(use_synspace)
+
+        # A stop from a previous turn must not kill this one.
+        self.request_stop(False)
 
         if self._is_waiting_for_user_input:
             # This block handles RESUMING either a paused sub-agent or Fleming itself waiting for user input.
@@ -252,6 +552,7 @@ class Fleming(Basic_Agent):
                 if not agent or not agent_generator or not paused_agent_name:
                     yield 'inner', ChatMessage(role="system", content="[Fleming Error] Could not find paused agent context. Restarting plan.")
                     self.conversation.append({"role": "user", "content": "My apologies, I lost track of the sub-task. Please re-evaluate your plan to address the user's request."})
+                    force_planner_next_round = True
                 else:
                     user_response_for_agent = f"User provided the requested input: {message}"
                     agent.conversation.append({"role": "system", "content": user_response_for_agent})
@@ -266,14 +567,30 @@ class Fleming(Basic_Agent):
                     if subagent_result is not None:
                         subagent_summary = subagent_result['content']
                         tools_used = subagent_result['tools_used']
-                        tool_output_for_context = f"The sub-agent call is complete. Summary: {subagent_summary}. Tools used by sub-agent: {tools_used}"
+                        # NOT truncated. A sub-agent's summary is ordered raw output -> literature ->
+                        # adjusted conclusion, and this used to keep only the first 3000 characters,
+                        # which removed the conclusion by construction. Measured on a live run: a
+                        # parallel call returned 15,372 characters, Fleming was handed 3,000, and both
+                        # agents' literature-adjusted values (inhibition 0.109 -> 0.13, cytotoxicity
+                        # 0.854 -> 0.88) sat in the discarded 80%. Fleming then reported the raw
+                        # numbers and stated that no adjustment had been made.
+                        subagent_summary_for_context = subagent_summary
+                        tools_used_display = ", ".join(map(str, tools_used[:5])) if tools_used else "none"
+                        if len(tools_used) > 5:
+                            tools_used_display += ", ..."
+                        tool_output_for_context = (
+                            f"The sub-agent call is complete. Summary: {subagent_summary_for_context}. "
+                            f"Tools used by sub-agent: {tools_used_display}."
+                        )
                         self.conversation.append({"role": "system", "content": tool_output_for_context})
                         # Add guidance prompt for Fleming to decide next steps
                         guidance_prompt = (
                             "Review the sub-agent's results and decide the next best step to satisfy the user's request. "
-                            "IMPORTANT: If the sub-agent's results are sufficient to answer the user's query and you completed the plan outlined at the initial step, you MUST use 'Tool-call: self.FINISHED()' to properly display your final answer to the user. "
-                            "Only continue with additional tool calls if you genuinely need more information to fully address the user's request or complete the plan. If there are molecules generated or referenced, make sure you continue to call the display_smiles_batch tool."
-                            "If ready to present the final answer, use 'Tool-call: self.FINISHED()'. "
+                            "Use the concrete outputs from the sub-agent above in your reasoning and final answer; do not say results were unavailable if they were returned here. "
+                            "If the sub-agent returned quantitative values, preserve those values in your answer. "
+                            "If the result is sufficient to answer the user, do not add more reasoning. Immediately use 'Tool-call: self.FINISHED()'. "
+                            "Only continue with another tool call if critical information is still missing. "
+                            "If molecules were generated or referenced and still need display, call the display_smiles_batch tool before finishing. "
                             "Otherwise, specify the next tool call in the format 'Tool-call: <agent_or_tool_call>'."
                         )
                         self.conversation.append({"role": "user", "content": guidance_prompt})
@@ -288,6 +605,10 @@ class Fleming(Basic_Agent):
         else:
             # This block handles a NEW user message.
             self._original_user_query = message  # Store the original user query
+            self.tools_called_in_current_run = []
+            self._active_plan_requirements = []
+            self._completed_plan_requirements = set()
+            self._active_plan_text = ""
             
             # Add context about the uploaded file if it exists
             if uploaded_csv_path:
@@ -306,23 +627,86 @@ class Fleming(Basic_Agent):
             yield 'main', ChatMessage(role="user", content=message) # show original message to user
             plan_prompt = self.prompts.get('initial_plan_prompt', "")
             self.conversation.append({"role": "user", "content": plan_prompt})
-            initial_plan = self.llm_infer(self.conversation)
+            initial_plan = self.llm_infer(
+                self.conversation,
+                model=PLANNER_MODEL,
+                reasoning_effort=PLANNER_REASONING,
+            )
             self.conversation.append({"role": "assistant", "content": initial_plan})
+            self._apply_plan_update(initial_plan)
             yield 'plan', initial_plan
-            yield 'inner', ChatMessage(role="assistant", content=f"[Fleming] {initial_plan}")
             self.conversation.append({"role": "user", "content": "Please begin your work based on the plan. When you have completed the user's task, use the FINISHED tool call to indicate completion."})
         
         for round_num in range(max_round):
             if self._is_waiting_for_user_input:
                 return 
 
-            response = self.llm_infer(self.conversation)
+            # The flag can only be read between calls, so a stop pressed during a long
+            # planner turn lands here, once that call has returned.
+            if self.stop_requested():
+                print("\033[1;33;40m Stop requested - ending this turn.\033[0m")
+                yield 'main', ChatMessage(
+                    role="assistant",
+                    content="Stopped at your request. The work so far is above; "
+                            "send another message to carry on from here.")
+                return
+
+            response_model = PLANNER_MODEL if (force_planner_next_round or round_num == 0) else MODEL
+            response_reasoning = PLANNER_REASONING if (force_planner_next_round or round_num == 0) else None
+            force_planner_next_round = False
+            response = self.llm_infer(
+                self.conversation,
+                model=response_model,
+                reasoning_effort=response_reasoning,
+            )
             self.conversation.append({"role": "assistant", "content": response})
-            yield 'inner', ChatMessage(role="assistant", content=f"[Fleming] {response}")
+            response_stripped = response.strip()
+            is_finished_call = False
+            tool_call_str = None
+            if 'tool-call:' in response.lower():
+                tool_call_str = response.split('Tool-call:')[-1].strip()
+                is_finished_call = bool(re.search(r'\bself\.FINISHED\s*\(', tool_call_str, flags=re.IGNORECASE))
+            is_direct_final = response_stripped.startswith(('ANSWER:', 'SUMMARY:'))
+            is_fallback_completion = any(phrase in response.lower() for phrase in self.no_tool_phrases)
+            is_plan_update = self._response_is_plan_update(response_stripped)
+            is_blocked_response = self._response_is_blocked(response_stripped)
+
+            if is_plan_update:
+                updated_plan = self._extract_plan_update_text(response_stripped)
+                self._apply_plan_update(updated_plan)
+                yield 'plan', updated_plan
+                self.conversation.append({
+                    "role": "user",
+                    "content": "The revised plan is now active. Continue execution based on the updated dependency graph."
+                })
+                yield 'inner', ChatMessage(role="system", content="[Plan] Revised plan accepted and activated.")
+                force_planner_next_round = True
+                continue
+
+            if is_blocked_response:
+                blocking_prefix, _, blocking_body = response_stripped.partition(":")
+                blocker_reason = blocking_body.strip() or response_stripped
+                user_message = f"ANSWER: I could not complete the full planned workflow. Reason: {blocker_reason}"
+                self.latest_final_response = user_message
+                yield 'main', ChatMessage(role="assistant", content=f"[{self.agent_name} Summary] {user_message}")
+                return
+
+            if not is_direct_final and not is_finished_call and not is_fallback_completion:
+                reasoning_text = response.split('Tool-call:')[0].strip() if tool_call_str else response_stripped
+                if reasoning_text:
+                    yield from _emit_chat('inner', ChatMessage(role="assistant", content=f"[Fleming] {reasoning_text}"))
+                if tool_call_str and tool_call_str.strip() and tool_call_str.lower() not in ['none', 'n/a']:
+                    yield from _emit_chat('inner', ChatMessage(role="assistant", content=f"[Fleming] Calling tool: `{tool_call_str.strip()}`"))
             
             # Check if we're near the end of rounds and have a final answer
             if round_num >= max_round - 3:
-                if response.strip().startswith(('ANSWER:', 'SUMMARY:')):
+                if is_direct_final:
+                    blocking_message = self._get_plan_blocking_message()
+                    if blocking_message:
+                        self.conversation.append({"role": "user", "content": blocking_message})
+                        yield 'inner', ChatMessage(role="system", content=f"[Plan] {self._get_plan_gate_notice() or blocking_message}")
+                        force_planner_next_round = True
+                        continue
                     print(f"\033[1;33;40m Near round limit with final answer. Completing early.\033[0m")
                     final_summary = response
                     self.latest_final_response = final_summary
@@ -331,12 +715,8 @@ class Fleming(Basic_Agent):
                 else:
                     # Instruct agent to finish up
                     self.conversation.append({"role": "system", "content": "You are nearing the maximum number of turns. Please summarize your findings now, even if the task is incomplete or results are not optimal. Use the FINISHED tool call to submit your summary."})
-
-            tool_call_str = None
-            if 'tool-call:' in response.lower():
-                tool_call_str = response.split('Tool-call:')[-1].strip()
-
             if tool_call_str and tool_call_str.strip() and tool_call_str.lower() not in ['none', 'n/a']:
+                no_tool_call_rounds = 0
                 agent_names = ['admet_agent', 'inhibition_agent', 'optimization_agent', 'molecular_reasoner_agent', 'generate_agent']
                 agent_name = next((name for name in agent_names if name in tool_call_str), None)
 
@@ -348,14 +728,25 @@ class Fleming(Basic_Agent):
                         if subagent_result is not None:
                             subagent_summary = subagent_result['content']
                             tools_used = subagent_result['tools_used']
-                            tool_output_for_context = f"The sub-agent call is complete. Summary: {subagent_summary}. Tools used by sub-agent: {tools_used}"
+                            self._mark_plan_completion_from_tools([agent_name] + list(tools_used or []))
+                            # Not truncated - see the note at the other sub-agent summary site.
+                            subagent_summary_for_context = subagent_summary
+                            tools_used_display = ", ".join(map(str, tools_used[:5])) if tools_used else "none"
+                            if len(tools_used) > 5:
+                                tools_used_display += ", ..."
+                            tool_output_for_context = (
+                                f"The sub-agent call is complete. Summary: {subagent_summary_for_context}. "
+                                f"Tools used by sub-agent: {tools_used_display}."
+                            )
                             self.conversation.append({"role": "system", "content": tool_output_for_context})
                             # Nudge Fleming to proceed: either continue with next tool or summarize
                             guidance_prompt = (
                                 "Review the sub-agent's results and decide the next best step to satisfy the user's request. "
-                                "IMPORTANT: If the sub-agent's results are sufficient to answer the user's query and you completed the plan outlined at the initial step, you MUST use 'Tool-call: self.FINISHED()' to properly display your final answer to the user. "
-                                "Only continue with additional tool calls if you genuinely need more information to fully address the user's request or complete the plan. If there are molecules generated or referenced, make sure you continue to call the display_smiles_batch tool."
-                                "If ready to present the final answer, use 'Tool-call: self.FINISHED()'. "
+                                "Use the concrete outputs from the sub-agent above in your reasoning and final answer; do not say results were unavailable if they were returned here. "
+                                "If the sub-agent returned quantitative values, preserve those values in your answer. "
+                                "If the result is sufficient to answer the user, do not add more reasoning. Immediately use 'Tool-call: self.FINISHED()'. "
+                                "Only continue with another tool call if critical information is still missing. "
+                                "If molecules were generated or referenced and still need display, call the display_smiles_batch tool before finishing. "
                                 "Otherwise, specify the next tool call in the format 'Tool-call: <agent_or_tool_call>'."
                             )
                             self.conversation.append({"role": "user", "content": guidance_prompt})
@@ -380,7 +771,15 @@ class Fleming(Basic_Agent):
                                     yield 'download', download_path
                                     # Also notify via chat
                                     yield 'inner', ChatMessage(role="assistant", content=f"[Fleming] Generated downloadable results file: {download_path}")
-                            tool_output_for_context = f"The batch processing is complete. Here is the summary of the results:\n{summary_update}\n\nNow, display the top molecules from the summary and then use the FINISHED tool call to provide a final answer to the user."
+                            # Still bounded, unlike the per-molecule paths above: this summary covers an
+                            # entire batch CSV, so it is the one place where the string grows with the size
+                            # of the job rather than with one molecule's evidence.
+                            compact_batch_summary = _compact_text(summary_update, max_chars=8000)
+                            tool_output_for_context = (
+                                "The batch processing is complete. Summary of results: "
+                                f"{compact_batch_summary}\n\n"
+                                "If this is enough to answer the user, display the top molecules if needed and then immediately use the FINISHED tool call."
+                            )
                             self.conversation.append({"role": "system", "content": tool_output_for_context})
                             continue # Continue to the next round of the loop
                         except Exception as e:
@@ -389,11 +788,17 @@ class Fleming(Basic_Agent):
  
                     else: # It's a regular, non-generator tool call
                         print(f"\033[1;36;40mDEBUG: Processing tool call: {tool_call_str}\033[0m")
+                        direct_tool_names = self._extract_tool_names_from_call(tool_call_str)
                         # If the tool call is FINISHED, short-circuit to summary even if parsing/eval might fail (e.g., extra ')')
                         if re.search(r'\bself\.FINISHED\s*\(', tool_call_str, flags=re.IGNORECASE):
                             tool_response = "TASK_COMPLETED_READY_FOR_SUMMARY"
                         else:
-                            tool_response = self.run_function(f"Tool-call: {tool_call_str}")
+                            try:
+                                tool_response = self.run_function(f"Tool-call: {tool_call_str}")
+                            except Exception as e:
+                                # Surface the failure to the model instead of silently dropping it,
+                                # so it gets a chance to retry with a different tool/arguments.
+                                tool_response = f"Error executing tool '{tool_call_str}': {e}"
                         print(f"\033[1;36;40mDEBUG: Tool response: {tool_response}\033[0m")
                         # Handle generator-producing tools (e.g., describe_molecule, check_druglikeness, run_parallel_agents)
                         if inspect.isgenerator(tool_response):
@@ -424,6 +829,12 @@ class Fleming(Basic_Agent):
                                 return
                             elif tool_response == "TASK_COMPLETED_READY_FOR_SUMMARY":
                                 # FINISHED tool call was used - trigger summarization
+                                blocking_message = self._get_plan_blocking_message()
+                                if blocking_message:
+                                    self.conversation.append({"role": "user", "content": blocking_message})
+                                    yield 'inner', ChatMessage(role="system", content=f"[Plan] {self._get_plan_gate_notice() or blocking_message}")
+                                    force_planner_next_round = True
+                                    continue
                                 final_summary = self._generate_final_summary()
                                 yield 'main', ChatMessage(role="assistant", content=f"[{self.agent_name} Summary] {final_summary}")
                                 return
@@ -436,17 +847,38 @@ class Fleming(Basic_Agent):
                                     "role": "system",
                                     "content": f"Displayed {len(items)} molecule(s): labels {', '.join(labels)}"
                                 })
+                                self._mark_plan_requirement_complete("display")
                                 yield 'molecules', items
                                 # Also include a lightweight inner note
                                 yield 'inner', ChatMessage(role="assistant", content=f"[Fleming] Displayed {len(items)} molecule(s): {', '.join(labels)}")
                                 continue
-                            
-                            tool_output_for_context = "The tool call is complete. Result: " + str(tool_response)
+                            elif isinstance(tool_response, str) and tool_response.startswith("Error executing tool"):
+                                yield 'inner', ChatMessage(role="system", content=f"[Fleming Error] {tool_response}")
+                                self.conversation.append({"role": "system", "content": tool_response})
+                                self.conversation.append({"role": "user", "content": "That tool call failed. Please re-evaluate your plan. You can try the tool again with different parameters, or try a different tool."})
+                                force_planner_next_round = True
+                                continue
+
+                            # Not truncated. The cytotoxicity tool alone returns ~1,400
+                            # characters, so the previous 1,000-char cap discarded the scale
+                            # and uncertainty guidance and could reach the numbers themselves.
+                            tool_output_for_context = (
+                                "The tool call is complete. Result: "
+                                + str(tool_response)
+                                + " Use this concrete tool output directly in later reasoning and in the final answer."
+                            )
+                            self._mark_plan_completion_from_tools(direct_tool_names)
                             self.conversation.append({"role": "system", "content": tool_output_for_context})
                             yield 'inner', ChatMessage(role="assistant", content=f"[Fleming Tool Result] {tool_output_for_context}")
 
             elif response.strip().startswith(('ANSWER:')):
                 # Direct final answer - use as-is
+                blocking_message = self._get_plan_blocking_message()
+                if blocking_message:
+                    self.conversation.append({"role": "user", "content": blocking_message})
+                    yield 'inner', ChatMessage(role="system", content=f"[Plan] {self._get_plan_gate_notice() or blocking_message}")
+                    force_planner_next_round = True
+                    continue
                 print(f"\033[1;33;40m Fleming provided direct final answer.\033[0m")
                 self.latest_final_response = response
                 yield 'main', ChatMessage(role="assistant", content=f"[{self.agent_name} Summary] {response}")
@@ -455,16 +887,49 @@ class Fleming(Basic_Agent):
                 
             elif any(phrase in response.lower() for phrase in self.no_tool_phrases):
                 # Fallback completion phrases - generate summary
+                blocking_message = self._get_plan_blocking_message()
+                if blocking_message:
+                    self.conversation.append({"role": "user", "content": blocking_message})
+                    yield 'inner', ChatMessage(role="system", content=f"[Plan] {self._get_plan_gate_notice() or blocking_message}")
+                    force_planner_next_round = True
+                    continue
                 final_summary = self._generate_final_summary()
                 yield 'main', ChatMessage(role="assistant", content=f"[{self.agent_name} Summary] {final_summary}")
                 return
 
-            else: 
-                # No tool call, just an intermediate thought. Continue loop.
-                pass
+            elif not response_stripped:
+                # An empty/blank response with no tool call and no finish signal would otherwise loop
+                # unchanged (same conversation, same near-zero temperature) until the round limit is
+                # hit, silently burning the entire budget without ever calling a tool. Nudge explicitly
+                # and escalate to the stronger planner model rather than repeating the same failing call.
+                self.conversation.append({
+                    "role": "user",
+                    "content": (
+                        "Your last response was empty. Please either make a tool call in the exact format "
+                        "'Tool-call: <agent_or_tool_call>', or if you already have everything you need, "
+                        "provide your final answer starting with 'ANSWER:'."
+                    )
+                })
+                force_planner_next_round = True
+
+            else:
+                # Neither a tool call nor a finish signal. This must never pass in silence -
+                # see Basic_Agent._no_tool_call_nudge for exactly what that used to cost.
+                no_tool_call_rounds += 1
+                self.conversation.append({
+                    "role": "user",
+                    "content": self._no_tool_call_nudge(
+                        no_tool_call_rounds,
+                        finish_hint="use 'Tool-call: self.FINISHED()'"),
+                })
+                force_planner_next_round = True
         
         # If we reach here, we've hit the max_round limit without Fleming finishing
         print(f"\033[1;33;40m Fleming reached turn limit. Forcing summary.\033[0m")
+        blocking_message = self._get_plan_blocking_message()
+        if blocking_message:
+            self.conversation.append({"role": "user", "content": blocking_message})
+            yield 'inner', ChatMessage(role="system", content=f"[Plan] {self._get_plan_gate_notice() or blocking_message}")
         final_summary = self._generate_final_summary()
         yield 'main', ChatMessage(role="assistant", content=f"[{self.agent_name} Summary] {final_summary}")
 
