@@ -5,7 +5,7 @@ from tqdm import tqdm
 import numpy as np
 
 # Bench Result DataFrame
-bench_validation_results = pd.read_excel('/n/data1/hms/dbmi/farhat/alex/Mtb_Inhibition_DL_Pipeline/output/dragonfold/screening_result/Charm_mols_WCA_nov24.xlsx',
+bench_validation_results = pd.read_excel("",
                                          sheet_name='CDD Export 1')
 
 bench_validation_results = bench_validation_results[['SMILES', 

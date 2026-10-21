@@ -14,7 +14,7 @@ INHIBITION_MODEL_CONTEXT = (
 class InhibitionUtils(Basic_Agent):
     
     def get_chemprop_prediction(self, smiles:list,
-                                model_paths:list = ['/n/data1/hms/dbmi/farhat/anz226/FlemingDev/model_checkpoints/final_model/fold_0/model_0/model.pt'],
+                                model_paths:list,
                                 device:str='cpu'):
         '''
         Wrapper function to get Chemprop prediction of MTB inhibition on a list of SMILES

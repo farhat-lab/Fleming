@@ -143,9 +143,8 @@ plt.plot(recall, precision,
          label = "Evidential DMPNN: AUPRC = %0.2f" % auc(recall, precision))
 
 ax.set(
-    xlabel="False Positive Rate",
-    ylabel="True Positive Rate",
-    # title=f"Mean ROC curve with variability",
+    xlabel="Recall",
+    ylabel="Precision",
 )
 
 ax.spines[['right','top']].set_visible(False)

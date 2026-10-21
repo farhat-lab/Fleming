@@ -229,11 +229,11 @@ ax.fill_between(
 )
 
 # Transformer-M
-fold_pred_df_list = [# 'data/model_checkpoints/Transformer-M/fold_0/val_pred.csv',
-                     # 'data/model_checkpoints/Transformer-M/fold_1/val_pred.csv',
-                     'data/model_checkpoints/Transformer-M/fold_2/val_pred_11.csv',
-                     'data/model_checkpoints/Transformer-M/fold_3/val_pred_28.csv',
-                     'data/model_checkpoints/Transformer-M/fold_4/val_pred_16.csv']
+fold_pred_df_list = ['data/model_checkpoints/Transformer-M/fold_0/test_pred.csv',
+                     'data/model_checkpoints/Transformer-M/fold_1/test_pred.csv',
+                     'data/model_checkpoints/Transformer-M/fold_2/test_pred.csv',
+                     'data/model_checkpoints/Transformer-M/fold_3/test_pred.csv',
+                     'data/model_checkpoints/Transformer-M/fold_4/test_pred.csv']
 
 ffnn_tprs = []
 ffnn_aucs = []
@@ -241,12 +241,8 @@ mean_ffnn_fpr = np.linspace(0, 1, 100)
 
 # fig_si, ax_si = plt.subplots()
 # fig, ax = plt.subplots(figsize=(6, 6))
-for fold in range(0,3):
+for fold in range(0,5):
     prediction_df = pd.read_csv(fold_pred_df_list[fold])
-    # true_label_df = pd.read_csv(f'data/inhibition_training_data/tb_inhibition_A&M/final_data/CompoundFragment_Inhibition_114933_mols_inclusive_with_antibiotics.csv')
-    # true_label_df = true_label_df[true_label_df['SMILES'].isin(prediction_df['SMILES'])]
-
-    # assert len(set(prediction_df['SMILES']).intersection(set(true_label_df['SMILES']))) == len(prediction_df), "Prediction and True Label not aligned."
 
     viz = RocCurveDisplay.from_predictions(
         prediction_df['inhibition'],
@@ -459,9 +455,9 @@ ax.plot([], [],
         color = colors['FFNN'],
         label = r'FFNN: AUPRC = %.2f $\pm$ %.2f' % (np.mean(ffnn_auprcs), np.std(ffnn_auprcs)))
 
-# Transformer-M (only 3 folds available: fold_2, fold_3, fold_4)
+# Transformer-M
 transformerm_auprcs = []
-for fold in range(0,3):
+for fold in range(0,5):
     prediction_df = pd.read_csv(fold_pred_df_list[fold])
 
     precision, recall, thresholds = precision_recall_curve(prediction_df['inhibition'],

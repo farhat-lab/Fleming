@@ -347,7 +347,7 @@ class PQA_Agent():
 		return self.run_molecule(molecule, question)
 
 if __name__ == '__main__':
-	config_path = "/home/unix/yektefai/Fleming/FlemingDev/configs/fleming.yaml"
+	config_path = ""
 	pqa_agent = PQA_Agent(config_path)
-	pqa_agent('CC1=C(C(=O)NC2=CN=CC=C2)SN=N1', 'Is this small molecule likely to be toxic to the liver?')
+	pqa_agent('CCCC', 'Is this small molecule likely to be toxic to the liver?')
 

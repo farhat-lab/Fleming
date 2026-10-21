@@ -1,4 +1,4 @@
-name: /n/scratch/users/a/anz226/fleming-interface-conda
+name: fleming-interface-conda
 channels:
   - pytorch
   - conda-forge

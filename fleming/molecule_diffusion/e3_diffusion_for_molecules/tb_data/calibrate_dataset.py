@@ -34,5 +34,4 @@ average_distances = calculate_average_distance(molecules)
 for (bond, order), distance in average_distances.items():
     print(f"Average distance for {bond[0]}-{bond[1]} bond of order {order}: {100*distance}")
 
-import pdb; pdb.set_trace()
 

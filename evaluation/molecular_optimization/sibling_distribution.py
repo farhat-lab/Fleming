@@ -12,7 +12,7 @@ def compare_Pharmacokinetics_distribution (before: str,
     after_df = pd.read_csv(after)
 
     before_total_fail = before_df['fail_sum'].to_list()
-    after_total_fail = after_df['fail_sum'].to_list()[9:]
+    after_total_fail = after_df['fail_sum'].to_list()
 
     # Plot Distribution Before after MO
     plt.rcParams['axes.labelsize'] = 20   # Axis labels
@@ -104,7 +104,7 @@ def compare_Pharmacokinetics_distribution (before: str,
     print(f"Mean Inhibition Before MO: {np.mean(before_df['inhibition'])} +/- {np.std(before_df['inhibition'])}")
     print(f"Mean Inhibition After MO: {np.mean(after_df['inhibition'])} +/- {np.std(after_df['inhibition'])}")
     print(f"Median Inhibition Before MO: {np.median(before_df['inhibition'])} [{np.quantile(before_df['inhibition'],[0.25,0.75])}]")
-    print(f"Median Inhibition Before MO: {np.median(after_df['inhibition'])} [{np.quantile(after_df['inhibition'],[0.25,0.75])}]")
+    print(f"Median Inhibition After MO: {np.median(after_df['inhibition'])} [{np.quantile(after_df['inhibition'],[0.25,0.75])}]")
 
 
     # Calculate P Value
@@ -114,7 +114,7 @@ def compare_Pharmacokinetics_distribution (before: str,
     print("Before Mean:", sum(before_total_fail) / len(before_total_fail))
     print("After Mean:", sum(after_total_fail)/len(after_total_fail))
     print(f"Median Before MO: {np.median(before_total_fail)} [{np.quantile(before_total_fail,[0.25,0.75])}]")
-    print(f"Median Before MO: {np.median(after_total_fail)} [{np.quantile(after_total_fail,[0.25,0.75])}]")
+    print(f"Median After MO: {np.median(after_total_fail)} [{np.quantile(after_total_fail,[0.25,0.75])}]")
     print(pvalue)
 
     # Bar Plot
@@ -137,7 +137,8 @@ def compare_Pharmacokinetics_distribution (before: str,
                 alpha=.35)
     plt.savefig(output_dir + "MO_barplot.png")
 
-    # Calculate the number of molecules failed more than 10 ADMET properties
+    # Calculate the number of molecules failing >25% of the 37 ADMET tasks
+    # (25% of 37 = 9.25, so the cut-off is 10 or more failed tasks).
     before_fail_10 = len([x for x in before_total_fail if x >= 10])
     after_fail_10 = len([x for x in after_total_fail if x >= 10])
     
@@ -148,8 +149,8 @@ def compare_Pharmacokinetics_distribution (before: str,
     print("Num Molecules failed 11 tasks before MO:", len(before_fail_11))
     print("Their fail counts after MO:", after_fail_11_counts)
 
-    print(f"Number of molecules failed more than 10 ADMET properties before MO: {before_fail_10} / {len(before_total_fail)} ({before_fail_10/len(before_total_fail)*100:.2f}%)")
-    print(f"Number of molecules failed more than 10 ADMET properties after MO: {after_fail_10} / {len(after_total_fail)} ({after_fail_10/len(after_total_fail)*100:.2f}%)")
+    print(f"Number of molecules failing >=10 of 37 ADMET tasks (>25%) before MO: {before_fail_10} / {len(before_total_fail)} ({before_fail_10/len(before_total_fail)*100:.2f}%)")
+    print(f"Number of molecules failing >=10 of 37 ADMET tasks (>25%) after MO: {after_fail_10} / {len(after_total_fail)} ({after_fail_10/len(after_total_fail)*100:.2f}%)")
 
 
 if __name__ == '__main__':
