@@ -4,12 +4,12 @@ Fleming is a multi-agent system designed for pharmaceutical sciences, capable of
 
 ## 🚀 Getting Started
 
-### 1. Prerequisites
+### Prerequisites
 
 - Python 3.10+
 - Conda (Miniconda or Anaconda) recommended
 
-### 2. Installation
+### Installation
 
 1.  **Clone the repository:**
 ```bash
@@ -21,7 +21,7 @@ cd fleming
 
 It is recommended to use a single environment for most tasks, although some external tools may require specific environments (see "External Tools" below). Conda is ideal for this project because it needs RDKit, PyTorch with CUDA, and other scientific libraries that have complex non-Python dependencies.
 
-Use HomeBrew to install Anaconda on MacOS
+Use HomeBrew to install Anaconda on macOS
 ```bash
 brew install --cask anaconda
 /opt/homebrew/anaconda3/bin/conda init zsh
@@ -45,7 +45,7 @@ See the [Development](#development) section below for more details
 
 *Note: The `molecule_diffusion` module has specific requirements. If you plan to use the Molecular Generation Agent, ensure you have a compatible PyTorch and RDKit version installed (see `molecule_diffusion/e3_diffusion_for_molecules/requirements.txt` for reference).*
 
-### 3. Configuration
+### Configuration
 
 1.  **Copy the example config:**
 ```bash
@@ -53,17 +53,11 @@ cp config.example.yaml config.yaml
 ```
 
 2.  **Edit `config.yaml`:**
-<<<<<<< HEAD
 - Add your **OpenAI API Key** (or Azure configuration).
 - Add your **PQApi Token** (if using Pharmacist Quality features).
 - Verify paths for models and data files.
-=======
-    - Add your **OpenAI API Key** (or Azure configuration).
-    - Add your **PQApi Token** .
-    - Verify paths for models and data files.
->>>>>>> 8cee231 (Save changes)
 
-### 4. Running Fleming
+### Running Fleming
 
 To launch the Gradio interface:
 
