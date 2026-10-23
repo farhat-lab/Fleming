@@ -1,42 +1,41 @@
-import pandas as pd
+# Add parent directory to sys.path to allow imports from fleming/ and fleming/utils/
+import sys
+from pathlib import Path
 import re
 import os
-from openai import OpenAI
-#from molecular_describer import prompt_generator
-from tqdm import tqdm
-import asyncio
-import sys
-from admet_ai import ADMETModel
-from rdkit import Chem
-from rdkit.Chem import Draw, AllChem, DataStructs
 import io
 import base64
-import yaml
-import json 
-import numpy as np
-import fcntl
-from admet_ai import ADMETModel
+import time
+import inspect
 from typing import List
+
+import pandas as pd
+from openai import OpenAI
+from tqdm import tqdm
+import yaml
+import numpy as np
 import chemprop.data as data
 import chemprop
 import torch
 from rdkit import Chem
-from tqdm import tqdm
+from rdkit.Chem import Draw, AllChem, DataStructs
 from rdkit.Chem.Descriptors import qed
-import gradio as gr
 from gradio import ChatMessage
-from utils.pqa_agent import PQA_Agent
-sys.path.append("../")
-import time
-import inspect
+from .pqa_agent import PQA_Agent
 
-import multiprocessing # Added import
-from utils.pqa_agent import PQA_Agent
+# Add the parent directory to the Python path
+# this overcomes the issue of relative imports when running this script directly
+parent_dir = Path(__file__).parent.parent
+sys.path.insert(0, str(parent_dir))
 
+# Load prompts from prompts.py
+# this should be changed to a more robust import if prompts.py is in a different directory
 from prompts import *
+
 MODEL='gpt-5.4-mini'
 PLANNER_MODEL='gpt-5.4'
 PLANNER_REASONING='high'
+
 # Add external_tools to path to allow importing sascore and scscore
 # This file is in utils/, and external_tools is in utils/external_tools
 current_dir = os.path.dirname(os.path.abspath(__file__))

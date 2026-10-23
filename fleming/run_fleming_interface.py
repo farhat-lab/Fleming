@@ -1,20 +1,15 @@
-import random
-import datetime
 import sys
 import threading
 import queue
+import textwrap
 sys.stdout.flush()
-try:
-    import spaces
-except ImportError:
-    spaces = None
+
 import gradio as gr
 import gradio_client.utils as gradio_client_utils
 import os
 from PIL import Image
 import base64
 import io
-import csv
 import json
 from starlette.templating import Jinja2Templates
 
@@ -83,7 +78,7 @@ def _patch_starlette_template_response():
 
 _patch_starlette_template_response()
 
-from utils.utils import detect_smiles_in_text, is_likely_smiles
+from .utils.utils import detect_smiles_in_text, is_likely_smiles
 try:
     from main_fleming import Fleming
 except Exception as exc:
@@ -367,7 +362,7 @@ new_tool_files = {
 }
 
 #config_path = "configs/fleming.yaml"
-config_path = "config.yaml"
+config_path = os.path.join(current_dir, "config.yaml")
 
 # Backends:
 # - legacy: `main_fleming.Fleming` (default for this iteration)
@@ -800,7 +795,38 @@ conversation_state = gr.State([])
 disclaimer_text = """
 **Disclaimer:** Fleming is a living tool in active development.
 """
+
+
+def identity(request: gr.Request):
+    """
+    Identity function to capture the request context and display user info.
+    """
+    if request is None:
+        identity_markdown.value = "No request context available."
+        return
+
+    email = request.session.get("user_email") or "Unknown"
+    content = f"""
+                **User :** {email}
+                """
+
+    return textwrap.dedent(content).strip()
+
+# should probably rename this from "demo" to "app" or "interface" for clarity, 
+# but keeping it as demo for now
 with gr.Blocks(css=css, theme=gr.themes.Soft(primary_hue="blue", neutral_hue="slate")) as demo:
+
+    with gr.Row():
+        with gr.Column(scale=1, min_width=100, elem_id='identity-column'):
+            # identity markdown is defined above and loaded below
+            identity_markdown = gr.Markdown()
+        with gr.Column(scale=1, min_width=100, elem_id='logout-column'):
+            logout_button = gr.Button(
+                "Logout", elem_id="logout-button", variant="stop", size="sm", link="/auth/logout"
+            )
+
+    gr.Markdown("""---""")
+
     gr.Markdown(DESCRIPTION)
 
     # --- Mode Selection Screen ---
@@ -937,6 +963,8 @@ with gr.Blocks(css=css, theme=gr.themes.Soft(primary_hue="blue", neutral_hue="sl
         download_csv_button = gr.File(label="Download Ranked CSV", visible=False)
 
     gr.Markdown(LICENSE)
+
+    demo.load(fn=identity, outputs=identity_markdown)
 
     # ------------------
     # All Event Handlers
@@ -1501,128 +1529,8 @@ with gr.Blocks(css=css, theme=gr.themes.Soft(primary_hue="blue", neutral_hue="sl
         cancels=[send_event, submit_event]
     ).then(lambda: ([], "Batch processing status will appear here.", gr.update(value=None, visible=False), gr.update(value=None, visible=False), gr.update(value="Waiting for plan...", visible=False)), outputs=[inner_chatbot, batch_summary_display, batch_dataframe_display, download_csv_button, plan_display])
 
-AUTH0_DOMAIN        = os.environ.get("AUTH0_DOMAIN", "")
-AUTH0_CLIENT_ID     = os.environ.get("AUTH0_CLIENT_ID", "")
-AUTH0_CLIENT_SECRET = os.environ.get("AUTH0_CLIENT_SECRET", "")
-AUTH0_SECRET_KEY    = os.environ.get("AUTH0_SECRET_KEY", "")
-
-USE_AUTH0 = (
-    _OAUTH_PACKAGES_AVAILABLE
-    and bool(AUTH0_DOMAIN)
-    and bool(AUTH0_CLIENT_ID)
-    and bool(AUTH0_CLIENT_SECRET)
-    and bool(AUTH0_SECRET_KEY)
-)
-
-if USE_AUTH0:
-    import datetime as _dt
-
-    _fastapi_app = FastAPI()
-
-
-    _fastapi_app.add_middleware(SessionMiddleware, secret_key=AUTH0_SECRET_KEY)
-
-    # ---- Auth0 OIDC client ---------------------------------------------------
-    _starlette_cfg = StarletteConfig(environ={
-        'AUTH0_CLIENT_ID':     AUTH0_CLIENT_ID,
-        'AUTH0_CLIENT_SECRET': AUTH0_CLIENT_SECRET,
-    })
-    _oauth_client = _OAuth(_starlette_cfg)
-    _oauth_client.register(
-        name='auth0',
-        server_metadata_url=f'https://{AUTH0_DOMAIN}/.well-known/openid-configuration',
-        client_kwargs={'scope': 'openid email profile'},
-    )
-
-    _LOG_DIR  = os.path.join(current_dir, 'logs')
-    _LOG_FILE = os.path.join(_LOG_DIR, 'user_activity.log')
-    os.makedirs(_LOG_DIR, exist_ok=True)
-
-    @_fastapi_app.middleware('http')
-    async def _track_user_activity(request: FastAPIRequest, call_next):
-        """Log authenticated requests to /gradio for usage auditing."""
-        response = await call_next(request)
-        if request.url.path.startswith('/gradio'):
-            user_info = request.session.get('user', {})
-            username  = user_info.get('name') or user_info.get('email') or 'anonymous'
-            ip        = request.client.host if request.client else 'unknown'
-            timestamp = _dt.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')
-            method    = request.method
-            path      = request.url.path
-            status    = response.status_code
-            line      = f"{timestamp} | {username:40s} | {ip:15s} | {method} {path} | {status}\n"
-            try:
-                with open(_LOG_FILE, 'a') as _lf:
-                    _lf.write(line)
-            except Exception:
-                pass  
-        return response
-
-    def _get_current_user(request: FastAPIRequest):
-        """Return the logged-in user's name/email, or None if not authenticated."""
-        user = request.session.get('user')
-        if user:
-            return user.get('name') or user.get('email')
-        return None
-
-    @_fastapi_app.get('/')
-    def _root(user: str = Depends(_get_current_user)):
-        return RedirectResponse(url='/gradio' if user else '/login-demo')
-
-    @_fastapi_app.route('/logout')
-    async def _logout(request: FastAPIRequest):
-        request.session.pop('user', None)
-        return_to = str(request.base_url)
-        return RedirectResponse(
-            url=f'https://{AUTH0_DOMAIN}/v2/logout?returnTo={return_to}&client_id={AUTH0_CLIENT_ID}'
-        )
-
-    @_fastapi_app.route('/login')
-    async def _login(request: FastAPIRequest):
-        redirect_uri = request.url_for('_oauth_callback')
-        return await _oauth_client.auth0.authorize_redirect(request, redirect_uri)
-
-    @_fastapi_app.route('/auth')
-    async def _oauth_callback(request: FastAPIRequest):
-        try:
-            token = await _oauth_client.auth0.authorize_access_token(request)
-        except OAuthError:
-            return RedirectResponse(url='/')
-        request.session['user'] = dict(token).get('userinfo', {})
-        return RedirectResponse(url='/')
-    with gr.Blocks(title="Fleming – Sign In") as _login_demo:
-        gr.Markdown(
-            "## Fleming\n\n"
-            "**An AI Agent for Drug Discovery in Tuberculosis**\n\n"
-            "Sign in with your institutional account to continue."
-        )
-        gr.Button("Sign in with Auth0", link="/login", variant="primary")
-
-    _fastapi_app = gr.mount_gradio_app(_fastapi_app, _login_demo, path="/login-demo")
-    _fastapi_app = gr.mount_gradio_app(_fastapi_app, demo, path="/gradio", auth_dependency=_get_current_user)
-
-
 if __name__ == "__main__":
-    if USE_AUTH0:
-        port = int(os.environ.get("GRADIO_SERVER_PORT", 7860))
-        print(f"Starting Fleming with Auth0 at http://0.0.0.0:{port}", flush=True)
-        print(f"  Main app  : http://localhost:{port}/gradio", flush=True)
-        print(f"  Login page: http://localhost:{port}/login-demo", flush=True)
-        print(f"  User log  : {_LOG_FILE}", flush=True)
-        _uvicorn.run(_fastapi_app, host="0.0.0.0", port=port)
-    else:
-        if not _OAUTH_PACKAGES_AVAILABLE:
-            print(
-                "Note: Auth0 packages unavailable. "
-                "Install with: pip install authlib itsdangerous uvicorn",
-                flush=True,
-            )
-        else:
-            print(
-                "Note: Auth0 disabled. "
-                "Set AUTH0_DOMAIN, AUTH0_CLIENT_ID, AUTH0_CLIENT_SECRET, AUTH0_SECRET_KEY to enable.",
-                flush=True,
-            )
-        _, local_url, share_url = demo.launch(share=True, server_name="0.0.0.0")
-        print("Gradio local URL:", local_url, flush=True)
-        print("Gradio share URL:", share_url, flush=True)
+    server_name = os.environ.get("APP_BASE_URL", "127.0.0.1")
+    _, local_url, share_url = demo.launch(share=True, server_name=server_name)
+    print("Gradio local URL:", local_url, flush=True)
+    print("Gradio share URL:", share_url, flush=True)
