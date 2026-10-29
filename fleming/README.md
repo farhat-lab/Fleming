@@ -4,12 +4,12 @@ Fleming is a multi-agent system designed for pharmaceutical sciences, capable of
 
 ## 🚀 Getting Started
 
-### 1. Prerequisites
+### Prerequisites
 
 - Python 3.10+
 - Conda (Miniconda or Anaconda) recommended
 
-### 2. Installation
+### Installation
 
 1.  **Clone the repository:**
 ```bash
@@ -21,7 +21,7 @@ cd fleming
 
 It is recommended to use a single environment for most tasks, although some external tools may require specific environments (see "External Tools" below). Conda is ideal for this project because it needs RDKit, PyTorch with CUDA, and other scientific libraries that have complex non-Python dependencies.
 
-Use HomeBrew to install Anaconda on MacOS
+Use HomeBrew to install Anaconda on macOS
 ```bash
 brew install --cask anaconda
 /opt/homebrew/anaconda3/bin/conda init zsh
@@ -45,7 +45,7 @@ See the [Development](#development) section below for more details
 
 *Note: The `molecule_diffusion` module has specific requirements. If you plan to use the Molecular Generation Agent, ensure you have a compatible PyTorch and RDKit version installed (see `molecule_diffusion/e3_diffusion_for_molecules/requirements.txt` for reference).*
 
-### 3. Configuration
+### Configuration
 
 1.  **Copy the example config:**
 ```bash
@@ -57,7 +57,24 @@ cp config.example.yaml config.yaml
 - Add your **PQApi Token** (if using Pharmacist Quality features).
 - Verify paths for models and data files.
 
-### 4. Running Fleming
+### Running Fleming (with authentication)
+
+To launch the Gradio interface with authentication:
+
+1. Copy the .env.example file to .env and fill in settings for your AWS Cognito user pool and client. Also updatre the `APP_BASE_URL` to point to your deployment (e.g., `http://localhost:7860` for local testing).
+
+2. Export the environment variables from the .env file:
+```bash
+export $(cat .env | xargs)
+```
+
+3. Run the secure app: 
+
+```bash
+uvicorn fleming.secure_app:app --reload --port 7860
+```
+
+### Running Fleming (without authentication)
 
 To launch the Gradio interface:
 
@@ -66,6 +83,37 @@ python run_fleming_interface.py
 ```
 
 By default the UI uses the legacy backend (`main_fleming.Fleming`). If you still have the optional SDK backend available, you can select it with `FLEMING_BACKEND=sdk`.
+
+To run the automatic CSV pipeline from the command line:
+
+```bash
+python run_fleming_batch_cli.py path/to/input.csv
+```
+
+The CSV must include a `SMILES` column. By default this runs `ranking`, `optimization`, and `plausibility`, then writes:
+
+- `<input>_fleming_results.csv`
+- step-specific files such as `<input>_fleming_results_ranking_results.csv`
+
+Example with explicit output and step control:
+
+```bash
+python run_fleming_batch_cli.py data/molecules.csv \
+  --output outputs/molecules_ranked.csv \
+  --steps ranking optimization \
+  --top-n-to-optimize 50
+```
+
+### Containerized interface-only environment
+
+If you only need to run `run_fleming_interface.py` and do not need the diffusion stack or ChemMCP/chemtools, use the environment-only container recipe under [docker/interface/README.md](/n/data1/hms/dbmi/farhat/anz226/Fleming/fleming/docker/interface/README.md).
+
+That workflow:
+
+- targets O2-style `Singularity` / `Apptainer` usage
+- stores the built `.sif` in `/n/scratch/users/a/anz226/`
+- keeps the Fleming source tree, model checkpoints, and `config.yaml` outside the image
+- runs the app by bind-mounting the repo into the container at runtime
 
 ## 🧩 External Tools & Models
 
@@ -102,6 +150,10 @@ These tools are included in `utils/external_tools/`.
 - **SCScore**: Included in `utils/external_tools/scscore`. Uses pre-trained models in `models/`.
 - **SAScore**: Included in `utils/external_tools/sascore`. Requires `fpscores.pkl.gz` (included).
 
+## 📊 Data Files
+
+- **`data/chembl_abx_cleaned.csv`**: A set of antibiotics and antibacterial candidate compounds pulled from [ChEMBL](https://www.ebi.ac.uk/chembl/), including approved antibiotics as well as investigational/candidate compounds (not filtered to only fully-approved drugs). This is used as the reference set for **novelty scoring** — new/generated molecules are compared (via Tanimoto similarity on Morgan fingerprints) against this set, so novelty reflects structural dissimilarity to known antibiotics and antibacterial candidates. Configured via `chembl_antibiotics_data` in `config.yaml`.
+
 ## 📂 Project Structure
 
 - `main_fleming.py`: Core agent logic.
@@ -119,6 +171,7 @@ These tools are included in `utils/external_tools/`.
 - **Model Not Found**: Check `config.yaml` paths and ensure model checkpoints are downloaded.
 - **CUDA/GPU**: Molecular generation is faster with a GPU. Ensure PyTorch is installed with CUDA support.
 - **Optional deps**: If you see warnings about missing `pqapi`, `PyTDC/tdc`, `langchain_community`, `chemicalconverters`, or `synspace`, those features are disabled but the core app should still run.
+- **Missing IUPAC names**: The `describe_molecule` tool (and `get_iupac`) optionally use the `chemicalconverters` module (pip package **`chemical-converters`**) to compute IUPAC names. It is **not installed by default** because it pins old, narrow dependency versions (`transformers==4.36.2`, `torch==2.1.2`, `rdkit==2023.3.3`) that conflict with the rest of this project's stack. If it's missing (or fails to load its model), IUPAC names are reported as unavailable and the LLM instead reasons directly from the SMILES string - the description quality is not meaningfully affected.
 
 ## Development
 Fleming runs in a conda environment. Here is a process to help manage the environment and corresponding YAML file

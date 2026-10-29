@@ -259,13 +259,10 @@ Format: ["SMILES1", "SMILES2", ...]
                 print(f"Warning: ADMET prediction yielded empty results for {len(inh_filtered)} candidates.")
 
             # 5. Get cytotoxicity predictions for the filtered set
+            model_list = []
             try:
                 cytotox_smiles = list(inh_filtered['SMILES'])
-                model_list = self.load_models(model_paths=[
-                    '/n/data1/hms/dbmi/farhat/anz226/FlemingDev/model_checkpoints/cytotox_models/hepg2_tox/fold_0/model_0/model.pt',
-                    '/n/data1/hms/dbmi/farhat/anz226/FlemingDev/model_checkpoints/cytotox_models/hskmc_tox/fold_0/model_0/model.pt',
-                    '/n/data1/hms/dbmi/farhat/anz226/FlemingDev/model_checkpoints/cytotox_models/imr90_tox/fold_0/model_0/model.pt'
-                ], device='cpu')
+                model_list = self.load_models(model_paths=self.admet_utils._get_cytotoxicity_model_paths(), device='cpu')
                 
                 cytotox_data = []
                 for smi in cytotox_smiles:
