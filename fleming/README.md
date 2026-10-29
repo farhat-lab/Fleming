@@ -57,7 +57,24 @@ cp config.example.yaml config.yaml
 - Add your **PQApi Token** (if using Pharmacist Quality features).
 - Verify paths for models and data files.
 
-### Running Fleming
+### Running Fleming (with authentication)
+
+To launch the Gradio interface with authentication:
+
+1. Copy the .env.example file to .env and fill in settings for your AWS Cognito user pool and client. Also updatre the `APP_BASE_URL` to point to your deployment (e.g., `http://localhost:7860` for local testing).
+
+2. Export the environment variables from the .env file:
+```bash
+export $(cat .env | xargs)
+```
+
+3. Run the secure app: 
+
+```bash
+uvicorn fleming.secure_app:app --reload --port 7860
+```
+
+### Running Fleming (without authentication)
 
 To launch the Gradio interface:
 
